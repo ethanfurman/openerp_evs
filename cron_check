@@ -1,0 +1,30 @@
+#!/usr/bin/python2.7
+
+from itertools import groupby
+from VSS.utils import mail
+
+message = """\
+To: %s
+From: cron_check <noreply@sunridgefarms.com>
+Subject: disabled cron jobs
+
+The following jobs are still disabled:
+
+\t%s
+"""
+
+with open('/etc/crontab') as crontab:
+    warnings = []
+    for line in crontab:
+        if line.startswith('#:cron_check:'):
+            _, email, prog = line.rsplit(':', 2)
+            cron_check = next(crontab)
+            if cron_check[0] == '#':
+                warnings.append((email, prog))
+    warnings.sort()
+    for email, progs in groupby(warnings, key=lambda ep: ep[0]):
+        prog_names = []
+        for _, prog in progs:
+            prog_names.append(prog)
+        msg = message % (email, '\n\t'.join(prog_names))
+        mail('mail.sunridgefarms.com', 25, msg)
