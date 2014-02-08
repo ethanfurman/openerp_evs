@@ -2,7 +2,7 @@
 
 from itertools import groupby
 from textwrap import dedent
-from VSS.utils import mail
+from scription import *, Execute, mail
 
 try:
     execfile('/etc/evs/cronaide.conf')
@@ -10,28 +10,36 @@ except:
     message = dedent("""\
             To: %s
             From: cron_check <noreply@nowhere.invalid>
-            Subject: disabled cron jobs
+            Subject: %s
 
-            The following jobs are still disabled:
-
-            \t%s
-            """)
+            %s""")
     mail_server = 'localhost'
 
-with open('/etc/crontab') as crontab:
-    warnings = []
-    for line in crontab:
-        if line.startswith('#:cron_check:'):
-            _, email, prog = line.rsplit(':', 2)
-            cron_check = next(crontab)
-            if cron_check[0] == '#':
-                addresses = email.split(',')
-                for addr in addresses:
-                    warnings.append((addr, prog))
-    warnings.sort()
-    for email, progs in groupby(warnings, key=lambda ep: ep[0]):
-        prog_names = []
-        for _, prog in progs:
-            prog_names.append(prog)
-        msg = message % (email, '\n\t'.join(prog_names))
-        mail(mail_server, 25, msg)
+@Command(
+        user=('Who to send a test mail to.',),
+        server=('Server to use', OPTION),
+        )
+def test_mail(user, server=mail_server):
+    msg = message % (user, 'test mail', 'hope you got this! :)')
+    mail(mail_server, 25, msg)
+
+
+@Command()
+def check_cron():
+    with open('/etc/crontab') as crontab:
+        warnings = []
+        for line in crontab:
+            if line.startswith('#:cron_check:'):
+                _, email, prog = line.rsplit(':', 2)
+                cron_check = next(crontab)
+                if cron_check[0] == '#':
+                    addresses = email.split(',')
+                    for addr in addresses:
+                        warnings.append((addr, prog))
+        warnings.sort()
+        for email, progs in groupby(warnings, key=lambda ep: ep[0]):
+            prog_names = []
+            for _, prog in progs:
+                prog_names.append(prog)
+            msg = message % (email, 'disabled cron jobs', '\t%s'%'\n\t'.join(prog_names))
+            mail(mail_server, 25, msg)
