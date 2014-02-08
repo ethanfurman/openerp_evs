@@ -2,7 +2,8 @@
 
 from itertools import groupby
 from textwrap import dedent
-from scription import *, Execute, mail
+from scription import *
+from scription import Execute, mail
 
 try:
     execfile('/etc/evs/cronaide.conf')
@@ -43,3 +44,6 @@ def check_cron():
                 prog_names.append(prog)
             msg = message % (email, 'disabled cron jobs', '\t%s'%'\n\t'.join(prog_names))
             mail(mail_server, 25, msg)
+
+if __name__ == '__main__':
+    Run()
