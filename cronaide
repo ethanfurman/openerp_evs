@@ -45,15 +45,22 @@ def watch(email, capture, heartbeat, passthrough, *job):
     if result.stderr or 'ERRROR' in result.stdout or result.returncode:
         msg = message % (
             email,
-            'job %s failed' % job[0],
-            '%s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' % (job, result.stdout, result.stderr),
+            'job failed:  %s' % job[0].split('/')[-1],
+            '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' % (' '.join(job), result.returncode, result.stdout, result.stderr),
             )
-    elif heartbeat:
-        msg = message % (
-            email,
-            'job %s ran in %d seconds' % (job[0], elapsed),
-            '%s' % (job, ),
-            )
+    else:
+        if heartbeat:
+            msg = message % (
+                email,
+                'heartbeat: %s' % job[0].split('/')[-1],
+                'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
+                )
+        if capture:
+            msg = message % (
+                email,
+                'job:  %s' % job[0].split('/')[-1],
+                '%s\n\nstdout\n======\n%s' % (' '.join(job), result.stdout),
+                )
     if msg is not None:
         mail(mail_server, 25, msg)
     if passthrough:
@@ -79,7 +86,7 @@ def check_cron():
             prog_names = []
             for _, prog in progs:
                 prog_names.append(prog)
-            msg = message % (email, 'disabled cron jobs', '\t%s'%'\n\t'.join(prog_names))
+            msg = message % (email, 'disabled cron jobs', '\n%s'%'\n\t'.join(prog_names))
             mail(mail_server, 25, msg)
 
 if __name__ == '__main__':
