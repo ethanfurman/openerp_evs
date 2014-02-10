@@ -1,0 +1,21 @@
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us /usr/local/bin/evs/test/error
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us /usr/local/bin/evs/test/error_stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us /usr/local/bin/evs/test/stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -h /usr/local/bin/evs/test/error
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -h /usr/local/bin/evs/test/error_stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -h /usr/local/bin/evs/test/stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -c /usr/local/bin/evs/test/error
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -c /usr/local/bin/evs/test/error_stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -c /usr/local/bin/evs/test/stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -p /usr/local/bin/evs/test/error
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -p /usr/local/bin/evs/test/error_stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -p /usr/local/bin/evs/test/stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -c -p /usr/local/bin/evs/test/error
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -c -p /usr/local/bin/evs/test/error_stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -c -p /usr/local/bin/evs/test/stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -h -p /usr/local/bin/evs/test/error
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -h -p /usr/local/bin/evs/test/error_stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -h -p /usr/local/bin/evs/test/stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -c -h /usr/local/bin/evs/test/error
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -c -h /usr/local/bin/evs/test/error_stdout
+/usr/local/bin/evs/cronaide watch ethan@stoneleaf.us -c -h /usr/local/bin/evs/test/stdout
