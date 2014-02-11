@@ -1,0 +1,27 @@
+#!/usr/bin/python
+import os
+from path import Path
+from scription import Script, Run
+
+@Script(
+        name=('file name(s) or directory name(s) to search for', 'required'),
+        path=('starting path (defaults to cwd)', 'option', 'p', Path),
+        files_only=('only search file names', 'flag'),
+        dirs_only=('only search dir names', 'flag'),
+        )
+def search(files_only, dirs_only, path='./', *name):
+    "Searches for `name` in `path`."
+    for tree, dirs, files in path.walk():
+        if not files_only:
+            for d in dirs:
+                for n in name:
+                    if n in d:
+                        print tree/d
+        if not dirs_only:
+            for f in files:
+                for n in name:
+                    if n in f:
+                        print tree/f
+
+if __name__ == '__main__':
+    Run()

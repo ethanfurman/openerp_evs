@@ -1,0 +1,98 @@
+#!/usr/bin/python
+
+from getpass import getpass
+from path import Path
+from scription import *
+from scription import Execute
+
+search = (
+    Path('/usr/lib/pymodules/python2.7'),
+    Path('/usr/local/share/python'),
+    Path('/home/ethan/bin'),
+    Path('/usr/local/bin')
+    )
+
+def workhorse(*path):
+    if path == (None, ):
+        path = search
+    for p in path:
+        for current, dirs, files in p.walk():
+            if '.bak/' in current or current.endswith('.bak'):
+                continue
+            if '.hg' in dirs:
+                yield current
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def status(*path):
+    for repo in workhorse(*path):
+        history = Execute(('hg', 'status'), cwd=repo)
+        if history.stdout or history.returncode:
+            print repo
+            print '=' * 76
+            print history.stdout
+            print
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def pull(*path):
+    password = getpass()
+    for repo in workhorse(*path):
+        history = Execute(('hg', 'pull'), cwd=repo, password=password)
+        if not history.stdout.strip().endswith('no changes found') or history.returncode:
+            print repo
+            print '=' * 76
+            print history.stdout
+            print
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def push(*path):
+    password = getpass()
+    for repo in workhorse(*path):
+        history = Execute(('hg', 'push'), cwd=repo, password=password)
+        if not history.stdout.strip().endswith('no changes found') or history.returncode != 1:
+            print repo
+            print '=' * 76
+            print history.stdout
+            print
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def update(*path):
+    password = getpass()
+    for repo in workhorse(*path):
+        history = Execute(('hg', 'branches'), cwd=repo)
+        desired = ''
+        for line in history.stdout.split('\n'):
+            if not line:
+                continue
+            branch, revision = line.split(None, 1)
+            if branch == 'run':
+                desired = branch
+                break
+        history = Execute(('hg', 'update', desired), cwd=repo, password=password)
+        stdout = history.stdout.strip().split('\n')
+        last_line = ''
+        if stdout:
+            last_line = stdout[-1]
+        if last_line != '0 files updated, 0 files merged, 0 files removed, 0 files unresolved' or history.returncode:
+            print repo
+            print '=' * 76
+            print history.stdout
+            print
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def list(*path):
+    for repo in workhorse(*path):
+        print repo
+
+
+if __name__ == '__main__':
+    Run()
