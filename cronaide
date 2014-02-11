@@ -66,7 +66,8 @@ def watch(email, capture, heartbeat, passthrough, *job):
             mail(mail_server, 25, msg)
     if passthrough:
         print(result.stdout, end='')
-    sys.exit(result.returncode)
+        sys.exit(result.returncode)
+    sys.exit(0)
 
 
 @Command()
