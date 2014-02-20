@@ -54,7 +54,7 @@ def push(*path):
     password = getpass()
     for repo in workhorse(*path):
         history = Execute(('hg', 'push'), cwd=repo, password=password)
-        if not history.stdout.strip().endswith('no changes found') or history.returncode != 1:
+        if not history.stdout.strip().endswith('no changes found') or history.returncode not in (0, 1):
             print repo
             print '=' * 76
             print history.stdout
@@ -65,7 +65,9 @@ def push(*path):
     )
 def update(*path):
     password = getpass()
+    print
     for repo in workhorse(*path):
+        print repo
         history = Execute(('hg', 'branches'), cwd=repo)
         desired = ''
         for line in history.stdout.split('\n'):
@@ -74,17 +76,18 @@ def update(*path):
             branch, revision = line.split(None, 1)
             if branch == 'run':
                 desired = branch
-                break
-        history = Execute(('hg', 'update', desired), cwd=repo, password=password)
+        if desired:
+            history = Execute(('hg', 'update', desired), cwd=repo, password=password)
+        else:
+            history = Execute(('hg', 'update', ), cwd=repo, password=password)
         stdout = history.stdout.strip().split('\n')
         last_line = ''
         if stdout:
             last_line = stdout[-1]
         if last_line != '0 files updated, 0 files merged, 0 files removed, 0 files unresolved' or history.returncode:
-            print repo
             print '=' * 76
             print history.stdout
-            print
+        print
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
