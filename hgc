@@ -51,7 +51,7 @@ def pull(*path):
         history = Execute(('hg', 'pull'), cwd=repo, password=password)
         if not history.stdout.strip().endswith('no changes found') or history.returncode:
             print history.stdout
-            print
+        print
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -64,7 +64,7 @@ def push(*path):
         history = Execute(('hg', 'push'), cwd=repo, password=password)
         if not history.stdout.strip().endswith('no changes found') or history.returncode not in (0, 1):
             print history.stdout
-            print
+        print
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
