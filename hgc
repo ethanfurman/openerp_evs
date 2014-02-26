@@ -27,12 +27,18 @@ def workhorse(*path):
     )
 def status(*path):
     for repo in workhorse(*path):
+        print repo
+        print '=' * 76
         history = Execute(('hg', 'status'), cwd=repo)
+        parent = Execute(('hg', 'parent'), cwd=repo)
+        latest = Execute(('hg', 'log', '-l1'), cwd=repo)
         if history.stdout or history.returncode:
-            print repo
-            print '=' * 76
             print history.stdout
+        if parent.stdout != latest.stdout:
             print
+            print 'latest version ' + latest.stdout[15:]
+            print 'running version ' + parent.stdout[16:]
+        print
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -40,10 +46,10 @@ def status(*path):
 def pull(*path):
     password = getpass()
     for repo in workhorse(*path):
+        print repo
+        print '=' * 76
         history = Execute(('hg', 'pull'), cwd=repo, password=password)
         if not history.stdout.strip().endswith('no changes found') or history.returncode:
-            print repo
-            print '=' * 76
             print history.stdout
             print
 
@@ -53,10 +59,10 @@ def pull(*path):
 def push(*path):
     password = getpass()
     for repo in workhorse(*path):
+        print repo
+        print '=' * 76
         history = Execute(('hg', 'push'), cwd=repo, password=password)
         if not history.stdout.strip().endswith('no changes found') or history.returncode not in (0, 1):
-            print repo
-            print '=' * 76
             print history.stdout
             print
 
@@ -68,6 +74,7 @@ def update(*path):
     print
     for repo in workhorse(*path):
         print repo
+        print '=' * 76
         history = Execute(('hg', 'branches'), cwd=repo)
         desired = ''
         for line in history.stdout.split('\n'):
@@ -85,8 +92,13 @@ def update(*path):
         if stdout:
             last_line = stdout[-1]
         if last_line != '0 files updated, 0 files merged, 0 files removed, 0 files unresolved' or history.returncode:
-            print '=' * 76
             print history.stdout
+        parent = Execute(('hg', 'parent'), cwd=repo)
+        latest = Execute(('hg', 'log', '-l1'), cwd=repo)
+        if parent.stdout != latest.stdout:
+            print
+            print 'latest version ' + latest.stdout[15:]
+            print 'running version ' + parent.stdout[16:]
         print
 
 @Command(
