@@ -23,22 +23,25 @@ def workhorse(*path):
                 yield current
 
 @Command(
+    date=('date to check for commits', REQUIRED),
     path=('base path to search', OPTION, 'p', Path),
     )
-def status(*path):
+def log_date(date, *path):
+    "displays all log entries for matching date"
+    for repo in workhorse(*path):
+        history = Execute(('hg', 'log', '--date', date), cwd=repo)
+        if history.stdout:
+            print repo
+            print '=' * 76
+            print history.stdout
+            print
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def list(*path):
     for repo in workhorse(*path):
         print repo
-        print '=' * 76
-        history = Execute(('hg', 'status'), cwd=repo)
-        parent = Execute(('hg', 'parent'), cwd=repo)
-        latest = Execute(('hg', 'log', '-l1'), cwd=repo)
-        if history.stdout or history.returncode:
-            print history.stdout
-        if parent.stdout != latest.stdout:
-            print
-            print 'latest version ' + latest.stdout[15:]
-            print 'running version ' + parent.stdout[16:]
-        print
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -64,6 +67,24 @@ def push(*path):
         history = Execute(('hg', 'push'), cwd=repo, password=password)
         if not history.stdout.strip().endswith('no changes found') or history.returncode not in (0, 1):
             print history.stdout
+        print
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def status(*path):
+    for repo in workhorse(*path):
+        print repo
+        print '=' * 76
+        history = Execute(('hg', 'status'), cwd=repo)
+        parent = Execute(('hg', 'parent'), cwd=repo)
+        latest = Execute(('hg', 'log', '-l1'), cwd=repo)
+        if history.stdout or history.returncode:
+            print history.stdout
+        if parent.stdout != latest.stdout:
+            print
+            print 'latest version ' + latest.stdout[15:]
+            print 'running version ' + parent.stdout[16:]
         print
 
 @Command(
@@ -100,13 +121,6 @@ def update(*path):
             print 'latest version ' + latest.stdout[15:]
             print 'running version ' + parent.stdout[16:]
         print
-
-@Command(
-    path=('base path to search', OPTION, 'p', Path),
-    )
-def list(*path):
-    for repo in workhorse(*path):
-        print repo
 
 
 if __name__ == '__main__':
