@@ -8,7 +8,7 @@ from scription import Execute
 search = (
     Path('/usr/lib/pymodules/python2.7'),
     Path('/usr/local/share/python'),
-    Path('/home/ethan/bin'),
+    Path('/home/ethan/source'),
     Path('/usr/local/bin')
     )
 
