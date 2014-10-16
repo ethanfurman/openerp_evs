@@ -13,7 +13,7 @@ search = (
     )
 
 def workhorse(*path):
-    if path == (None, ):
+    if not path:
         path = search
     for p in path:
         for current, dirs, files in p.walk():
