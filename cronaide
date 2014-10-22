@@ -43,11 +43,11 @@ def watch(email, capture, heartbeat, passthrough, *job):
     stop = time()
     elapsed = stop - start
     msg = None
-    if 'ERROR' in result.stdout or result.returncode:
+    if 'ERROR' in result.stdout or result.returncode or result.stderr:
         msg = message % (
             email,
             'job failed:  %s' % job[0].split('/')[-1],
-            '%s\n\nreturn code: %s\n\noutput\n======\n%s' % (' '.join(job), result.returncode, result.stdout),
+            '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' % (' '.join(job), result.returncode, result.stdout, result.stderr),
             )
         mail(mail_server, 25, msg)
     else:
@@ -62,11 +62,12 @@ def watch(email, capture, heartbeat, passthrough, *job):
             msg = message % (
                 email,
                 'job:  %s' % job[0].split('/')[-1],
-                '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' % (' '.join(job), elapsed, result.stdout),
+                '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s\n\nstderr\n======\n%s' % (' '.join(job), elapsed, result.stdout, result.stderr),
                 )
             mail(mail_server, 25, msg)
     if passthrough:
-        print(result.stdout, end='')
+        print(result.stdout)
+        print(result.stderr)
         sys.exit(result.returncode)
     sys.exit(0)
 
