@@ -1,0 +1,375 @@
+#!/usr/local/bin/suid-python
+from __future__ import print_function
+
+from dbf import Date
+from path import Path
+from scription import *
+from tempfile import mkdtemp
+import os
+import pwd
+
+settings = IniFile('/etc/openerp/fnx.ini', section='postgres')
+PSQLCMD = '%(psql)s %%(port)s' % settings
+PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
+DAILY_STORAGE = Path(settings.daily)
+MONTHLY_STORAGE = Path(settings.monthly)
+TARARCHIVE = '%(tar)s --create --file %%(target_name)s %%(file_list)s' % settings
+TARDISPLAY = '%(tar)s --list --file %%(target)s' % settings
+TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % settings
+COMPRESS = '%(gzip)s --force --rsyncable %%(target_name)s' % settings
+
+TODAY = Date.today()
+POSTGRES_IDS = tuple(pwd.getpwnam('postgres')[2:4])
+ACTUAL_IDS = os.getuid(), os.getgid()
+TEMP = None
+PORT = None
+
+@Command(
+        dbs=('database(s) to backup [default: all dbs]', MULTI),
+        )
+def backup(dbs):
+    _get_pg_port()
+    with user_ids(*POSTGRES_IDS):
+        TEMP.chdir()
+        if not dbs:
+            store = True
+            storage = DAILY_STORAGE
+            dbs = _get_dbs()
+        else:
+            store = False
+            storage = TEMP
+        template = '%s_%%s_pg91.sql' % TODAY
+        failures = False
+        # first, backup as many databases as we can
+        print('backing up . . .')
+        for db in dbs:
+            file = template % db
+            if not _backup(db, file) and not db.startswith('template'):
+                failures = True
+        # then, combine them all into a single tar.gz file
+        tgz_file = _tgz(TEMP, storage)
+        # finally, make a copy in monthly if today is the first
+        # but only if store == True
+        if store:
+            if TODAY.day == 1:
+                tgz_file.copy(MONTHLY_STORAGE)
+            _remove_excess(DAILY_STORAGE)
+        else:
+            with user_ids(0, 0):
+                tgz_file.chown(*ACTUAL_IDS)
+                tgz_file.copy(START_DIR)
+        if failures:
+            raise SystemExit('not all databases backed up')
+
+
+@Command(
+        date=Spec('date of archive file', OPTION, None, Date),
+        dbs=Spec('names of dbs to extract [default: all]', MULTI, None),
+        file=Spec('archive file to extract from', OPTION, None, Path),
+        )
+def extract(date, dbs, file):
+    if date and file:
+        raise ValueError('only one of DATE and FILE may be specified')
+    if not (date or file):
+        raise ValueError('must have one of DATE or FILE')
+    if date:
+        found = DAILY_STORAGE.glob('%s*' % date)
+        if not found:
+            found = MONTHLY_STORAGE.glob('%s*' % date)
+            if not found:
+                raise ValueError('no files found for %s' % date)
+        if len(found) > 1:
+            raise ValueError('should only have one match, but found %s' % ', '.join(found))
+        [file] = found
+    print(file)
+    if not dbs:
+        dbs = _list(file)
+    extracted = []
+    for db in dbs:
+        print('   %s' % db)
+        sql_file = _extract(db, file)
+        extracted.append(sql_file)
+    with user_ids(0, 0):
+        for file in extracted:
+            file.chown(*ACTUAL_IDS)
+
+
+@Command(
+        date=('date of archive to list', OPTION, 'd', Date),
+        file=Spec('archive file to list', OPTION, 'f', Path),
+        )
+def list(date, file):
+    """
+    show all tables archived for DATE, or stored in FILE
+    """
+    if date and file:
+        raise ValueError('only one of DATE and FILE may be specified')
+    if not (date or file):
+        raise ValueError('must have one of DATE or FILE')
+    if date:
+        found = DAILY_STORAGE.glob('%s*' % date)
+        if not found:
+            found = MONTHLY_STORAGE.glob('%s*' % date)
+            if not found:
+                raise ValueError('no files found for %s' % date)
+        if len(found) > 1:
+            raise ValueError('should only have one match, but found %s' % ', '.join(found))
+        [file] = found
+    print(file)
+    db_names = _list(file)
+    for name in db_names:
+        print('   %s' % name)
+    print()
+        
+
+@Command(
+        date=('date of archive to restore from', OPTION, None, Date),
+        db=('database in archive to restore', REQUIRED, None),
+        file=('archive file to extract from / sql file to restore from', OPTION, None, Path),
+        new_db=('restore as a new database [default: restore to same database]', OPTION, None),
+        )
+def restore(db, date, file, new_db):
+    if date and file:
+        raise ValueError('only one of DATE and FILE may be specified')
+    if not db:
+        raise ValueError('NAME must be specified')
+    # if file and not (name or new_db):
+    #     raise ValueError('either NAME or NEW_DB must be specified with FILE')
+    _get_pg_port()
+    tgz_file = sql_file = None
+    if file:
+        # if a file is specified copy it to TEMP
+        file.copy(TEMP)
+        file = TEMP/file.filename
+        file.chown(*POSTGRES_IDS)
+        if file.ext in ('.tar', '.gz', '.tgz'):
+            tgz_file = file
+        else:
+            sql_file = file
+    with user_ids(*POSTGRES_IDS):
+        TEMP.chdir()
+        if date:
+            found = DAILY_STORAGE.glob('%s*' % date)
+            if not found:
+                found = MONTHLY_STORAGE.glob('%s*' % date)
+                if not found:
+                    raise ValueError('no files found for %s' % date)
+            if len(found) > 1:
+                raise ValueError('should only have one match, but found %s' % ', '.join(found))
+            [tgz_file] = found
+        if tgz_file:
+            # at this point, we have the archive file, and we have the name of the database to extract
+            sql_file = _extract(db, tgz_file)
+        # we now have an sql file to restore from
+        if new_db is None:
+            new_db = db
+        if not new_db.startswith('test_'):
+            current_dbs = _get_dbs()
+            if new_db in current_dbs:
+                answer = get_response('\n%s already exists -- [r]ename or [o]verwrite?' % new_db)
+                if answer == 'overwrite':
+                    if not get_response('\nthis cannot be undone -- are you sure?'):
+                        raise SystemExit('database restore aborted')
+                    # drop...
+                    _psql('-c "DROP DATABASE %s;"' % new_db, verbose=True)
+                elif answer == 'rename':
+                    print('\ncurrent databases:')
+                    for db in current_dbs:
+                        print('  ', db)
+                    new_name = get_response(
+                            '\nnew database name:',
+                            validate=lambda name: name not in current_dbs,
+                            type=lambda name: name,
+                            retry='that name is also in use, please choose another',
+                            )
+                    # rename...
+                    _psql('-c "ALTER DATABASE %s RENAME TO %s;"' % (new_db, new_name), verbose=True)
+                else:
+                    raise Exception('unable to process response of %r' % answer)
+        else:
+            # overwrite test_ databases
+            _psql('-c "DROP DATABASE IF EXISTS %s;"' % new_db, verbose=True)
+        # at this point we are good to restore...
+        #
+        # (re)create the new database
+        dest_file = START_DIR/new_db+'.log'
+        if dest_file.exists():
+            dest_file.remove()
+        log_file = Path(new_db+'.log')
+        _psql('''-c "CREATE DATABASE %s TEMPLATE template1 ENCODING 'unicode';"''' % new_db, verbose=True)
+        try:
+            error = None
+            _psql(
+                    '--log-file %(log)s --echo-all --file %(sql)s %(db_name)s'
+                    % dict(sql=sql_file, db_name=new_db, log=log_file),
+                    verbose=True,
+                    )
+            _psql('-c "ALTER DATABASE %s OWNER TO openerp;"' % new_db, verbose=True)
+        except Exception, exc:
+            error = exc
+        with user_ids(0, 0):
+            log_file.chown(*ACTUAL_IDS)
+            log_file.move(dest_file)
+        if error:
+            raise error
+        # possibly examine the log file for errors here
+
+
+def _backup(db, filename):
+    _get_pg_port()
+    pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db, port=PORT)
+    print('   %s' % db, end='')
+    result = Execute(pg_dump)
+    if result.returncode:
+        print(' -- FAILED')
+    else:
+        print()
+    if result.stdout:
+        for line in result.stdout.split('\n'):
+            print('   %s' % line)
+    if result.returncode:
+        print('       %s' % pg_dump)
+        for line in result.stderr.split('\n'):
+            print('      %s' % line)
+        print()
+    return not result.returncode
+
+def _extract(name, found):
+    date = found.filename[:10]
+    name = '%s_%s_pg91.sql' % (date, name)
+    tgz_cmd = TGZEXTRACT % dict(archive=found, target=name)
+    result = Execute(tgz_cmd)
+    if result.stdout:
+        for line in result.stdout.split('\n'):
+            print(line)
+    if result.returncode:
+        for line in result.stderr.split('\n'):
+            print(line)
+        raise SystemExit(result.returncode)
+    return Path(name)
+
+def _get_dbs():
+    _get_pg_port()
+    result = _psql('--list --tuple')
+    dbs = []
+    for line in result.split('\n'):
+        db = line.split('|', 1)[0].strip()
+        if db and db != 'template0':
+            # template0 is special, and cannot be accessed
+            dbs.append(db)
+    if not dbs:
+        print('FAILED: %s' % psql)
+        raise SystemExit('no databases found!')
+    return dbs
+
+def _get_pg_port():
+    global PORT, PSQLCMD
+    if PORT is not None:
+        return
+    with user_ids(0, 0):
+        etc_oe = Path('/etc/openerp')
+        if etc_oe.exists('server.conf'):
+            conf = etc_oe/'server.conf'
+        elif etc_oe.exists('openerp-server.conf'):
+            conf = etc_oe/'openerp-server.conf'
+        else:
+            raise ValueError('unable to find OpenERP configuration file')
+        with conf.open() as conf:
+            for line in conf.readlines():
+                if line.startswith('db_port'):
+                    port = line.split('=')[1].strip()
+                    if port == 'False':
+                        PORT = ''
+                    else:
+                        PORT = '-p %d' % int(port)
+        PSQLCMD = (PSQLCMD % dict(port=PORT)).strip()
+
+def _list(archive):
+    tgz_cmd = TARDISPLAY % dict(target=archive)
+    result = Execute(tgz_cmd)
+    dbs = []
+    if result.stdout:
+        for line in result.stdout.split('\n'):
+            db_name = line[11:].rsplit('_', 1)[0].strip()
+            if db_name:
+                dbs.append(db_name)
+    if result.returncode:
+        print('FAILED: %s' % tgz_cmd)
+        for line in result.stderr.split('\n'):
+            print('   %s' % line)
+        raise SystemExit(result.returncode)
+    return dbs
+
+def _psql(cmd, verbose=False):
+    cmd = '%s %s' % (PSQLCMD, cmd)
+    if verbose:
+        print()
+        print(cmd)
+    with user_ids(*POSTGRES_IDS):
+        result = Execute(cmd)
+    if result.returncode:
+        if result.returncode != -1:
+            print('FAILED: <%d> %s' % (result.returncode, cmd))
+        for line in result.stderr.split('\n'):
+            print('   %s' % line)
+        if result.returncode != -1:
+            raise SystemExit(result.returncode)
+    return result.stdout
+
+def _remove_excess(storage):
+    """
+    keep 60 days worth of our backups
+    """
+    try:
+        found = storage.glob('*_pg91.tar.gz')
+        if len(found) > 60:
+            found.sort(reverse=True)
+            for target in found[60:]:
+                target.remove()
+    except:
+        print(sys.exc_info())
+        raise
+
+def _tgz(source_path, target_path):
+    target = target_path/'%s_pg91.tar' % TODAY
+    tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(source_path.listdir()))
+    print('\narchiving . . .')
+    result = Execute(tgz_cmd, cwd=source_path)
+    if result.stdout:
+        for line in result.stdout.split('\n'):
+            print('   %s' % line)
+    if result.returncode:
+        print('FAILED: %s' % tgz_cmd)
+        for line in result.stderr.split('\n'):
+            print('   %s' % line)
+        raise SystemExit(result.returncode)
+    print('\ncompressing . . .')
+    archive_cmd = COMPRESS % dict(target_name=target)
+    result = Execute(archive_cmd)
+    if result.stdout:
+        for line in result.stdout.split('\n'):
+            print('   %s' % line)
+    if result.returncode:
+        print('FAILED: %s' % archive_cmd)
+        for line in result.stderr.split('\n'):
+            print('   %s' % line)
+        raise SystemExit(result.returncode)
+    target += '.gz'
+    return target
+
+if __name__ == '__main__':
+    if not DAILY_STORAGE.exists():
+        raise SystemExit('%s needs to be created, and owned by postgres' % DAILY_STORAGE)
+    if not MONTHLY_STORAGE.exists():
+        raise SystemExit('%s needs to be created, and owned by postgres' % MONTHLY_STORAGE)
+    START_DIR = Path.getcwd()
+    # if ACTUAL_IDS == (0, 0) and :
+    #     Path('/home').chdir()
+    try:
+        with user_ids(*POSTGRES_IDS):
+            TEMP = Path(mkdtemp(dir='/tmp', suffix='_pgdbs'))
+        Run()
+    finally:
+        if TEMP:
+            TEMP.rmtree()
+        START_DIR.chdir()
