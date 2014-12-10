@@ -3,7 +3,6 @@
 from getpass import getpass
 from path import Path
 from scription import *
-from scription import Execute
 
 search = (
     Path('/usr/lib/pymodules/python2.7'),
@@ -30,15 +29,11 @@ def log_date(date, *path):
     "displays all log entries for matching date"
     for repo in workhorse(*path):
         history = Execute(('hg', 'log', '--date', date), cwd=repo)
-        if history.stdout or history.stderr:
+        if history.stdout:
             print repo
             print '=' * 76
-            if history.stdout:
-                print history.stdout
-                print
-            if history.stderr:
-                print history.stderr
-                print
+            print history.stdout
+            print
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -60,14 +55,13 @@ def pull(repo, *path):
             continue
         print repo
         print '=' * 76
-        history = Execute(('hg', 'pull'), cwd=repo, password=password)
+        history = Execute(('hg', 'pull'), cwd=repo, password=password, pty=True)
         if not history.stdout.strip().endswith('no changes found') or history.returncode:
             print history.stdout
-            print history.stderr
         print
 
 @Command(
-    repo=('repository to pull [default: all]', OPTION),
+    repo=('repository to push [default: all]', OPTION),
     path=('base path to search', OPTION, 'p', Path),
     )
 def push(repo, *path):
@@ -78,10 +72,9 @@ def push(repo, *path):
             continue
         print repo
         print '=' * 76
-        history = Execute(('hg', 'push'), cwd=repo, password=password)
+        history = Execute(('hg', 'push'), cwd=repo, password=password, pty=True)
         if not history.stdout.strip().endswith('no changes found') or history.returncode not in (0, 1):
             print history.stdout
-            print history.stderr
         print
 
 @Command(
@@ -96,7 +89,6 @@ def status(*path):
         latest = Execute(('hg', 'log', '-l1'), cwd=repo)
         if history.stdout or history.returncode:
             print history.stdout
-            print history.stderr
         if parent.stdout != latest.stdout:
             print
             print 'latest version ' + latest.stdout[15:]
@@ -104,7 +96,7 @@ def status(*path):
         print
 
 @Command(
-    repo=('repository to pull [default: all]', OPTION),
+    repo=('repository to update [default: all]', OPTION),
     path=('base path to search', OPTION, 'p', Path),
     )
 def update(repo, *path):
@@ -115,8 +107,6 @@ def update(repo, *path):
         print repo
         print '=' * 76
         history = Execute(('hg', 'branches'), cwd=repo)
-        print history.stdout
-        print history.stderr
         desired = ''
         for line in history.stdout.split('\n'):
             if not line:
@@ -128,15 +118,12 @@ def update(repo, *path):
             history = Execute(('hg', 'update', desired), cwd=repo)
         else:
             history = Execute(('hg', 'update', ), cwd=repo)
-        print history.stdout
-        print history.stderr
         stdout = history.stdout.strip().split('\n')
         last_line = ''
         if stdout:
             last_line = stdout[-1]
         if last_line != '0 files updated, 0 files merged, 0 files removed, 0 files unresolved' or history.returncode:
             print history.stdout
-            print history.stderr
         parent = Execute(('hg', 'parent'), cwd=repo)
         latest = Execute(('hg', 'log', '-l1'), cwd=repo)
         if parent.stdout != latest.stdout:
@@ -145,6 +132,4 @@ def update(repo, *path):
             print 'running version ' + parent.stdout[16:]
         print
 
-
-if __name__ == '__main__':
-    Run()
+Main()
