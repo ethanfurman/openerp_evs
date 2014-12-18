@@ -4,7 +4,6 @@ from __future__ import print_function
 from itertools import groupby
 from textwrap import dedent
 from scription import *
-from scription import Execute, mail
 from time import time
 import traceback as tb
 import sys
@@ -101,6 +100,7 @@ def check_cron():
             msg = message % (email, 'disabled cron jobs', '\n%s'%'\n\t'.join(prog_names))
             mail(mail_server, 25, msg)
 
+
 if __name__ == '__main__':
     try:
         Run()
@@ -112,3 +112,4 @@ if __name__ == '__main__':
             message % (primary, exc.command_line, body),
             )
         raise
+
