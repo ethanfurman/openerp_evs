@@ -31,25 +31,31 @@ def test_mail(email, server=mail_server):
 
 
 @Command(
-        email=('Who to send job output to.',),
+        email=('Who to send job output to.', OPTION, ),
         capture=('Send all output to <email>', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
         job=('job to run', REQUIRED, ),
         )
 def watch(email, capture, heartbeat, passthrough, *job):
+    if not email and (capture or heartbeat):
+        help('EMAIL must be specified if either of CAPTURE or HEARTBEAT are')
+    failed = False
     start = time()
     result = Execute(job)
     stop = time()
     elapsed = stop - start
     msg = None
     if 'ERROR' in result.stdout or result.returncode or result.stderr:
-        msg = message % (
-            email,
-            'job failed:  %s' % job[0].split('/')[-1],
-            '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' % (' '.join(job), result.returncode, result.stdout, result.stderr),
-            )
-        mail(mail_server, 25, msg)
+        failed = True
+        if email:
+            msg = message % (
+                email,
+                'job failed:  %s' % job[0].split('/')[-1],
+                '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' %
+                (' '.join(job), result.returncode, result.stdout, result.stderr),
+                )
+            mail(mail_server, 25, msg)
     else:
         if heartbeat:
             msg = message % (
@@ -62,10 +68,11 @@ def watch(email, capture, heartbeat, passthrough, *job):
             msg = message % (
                 email,
                 'job:  %s' % job[0].split('/')[-1],
-                '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s\n\nstderr\n======\n%s' % (' '.join(job), elapsed, result.stdout, result.stderr),
+                '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
+                (' '.join(job), elapsed, result.stdout),
                 )
             mail(mail_server, 25, msg)
-    if passthrough:
+    if passthrough or (failed and not email):
         if result.stdout:
             print(result.stdout)
         if result.stderr:
