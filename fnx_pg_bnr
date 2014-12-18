@@ -1,5 +1,5 @@
 #!/usr/local/bin/suid-python
-from __future__ import print_function
+from __future__ import print_function, unicode_literals
 
 from dbf import Date
 from path import Path
@@ -8,7 +8,7 @@ from tempfile import mkdtemp
 import os
 import pwd
 
-settings = IniFile('/etc/openerp/fnx.ini', section='postgres')
+settings = IniFile('/etc/openerp/fnx.ini', section='postgres', types={'_path':unicode})
 PSQLCMD = '%(psql)s %%(port)s' % settings
 PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
 DAILY_STORAGE = Path(settings.daily)
@@ -26,8 +26,9 @@ PORT = None
 
 @Command(
         dbs=('database(s) to backup [default: all dbs]', MULTI),
+        id=('extra info for extra backups (appears in compressed file name)', OPTION),
         )
-def backup(dbs):
+def backup(dbs, id):
     _get_pg_port()
     with user_ids(*POSTGRES_IDS):
         TEMP.chdir()
@@ -47,7 +48,7 @@ def backup(dbs):
             if not _backup(db, file) and not db.startswith('template'):
                 failures = True
         # then, combine them all into a single tar.gz file
-        tgz_file = _tgz(TEMP, storage)
+        tgz_file = _tgz(TEMP, storage, id)
         # finally, make a copy in monthly if today is the first
         # but only if store == True
         if store:
@@ -69,9 +70,9 @@ def backup(dbs):
         )
 def extract(date, dbs, file):
     if date and file:
-        raise ValueError('only one of DATE and FILE may be specified')
+        abort('only one of DATE and FILE may be specified')
     if not (date or file):
-        raise ValueError('must have one of DATE or FILE')
+        abort('must have one of DATE or FILE')
     if date:
         found = DAILY_STORAGE.glob('%s*' % date)
         if not found:
@@ -330,8 +331,11 @@ def _remove_excess(storage):
         print(sys.exc_info())
         raise
 
-def _tgz(source_path, target_path):
-    target = target_path/'%s_pg91.tar' % TODAY
+def _tgz(source_path, target_path, id=None):
+    if id is None:
+        target = target_path/'%s_pg91.tar' % TODAY
+    else:
+        target = target_path/'%s_%s_pg91.tar' % (TODAY, id)
     tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(source_path.listdir()))
     print('\narchiving . . .')
     result = Execute(tgz_cmd, cwd=source_path)
@@ -369,6 +373,7 @@ if __name__ == '__main__':
         with user_ids(*POSTGRES_IDS):
             TEMP = Path(mkdtemp(dir='/tmp', suffix='_pgdbs'))
         Run()
+        print('finished')
     finally:
         if TEMP:
             TEMP.rmtree()
