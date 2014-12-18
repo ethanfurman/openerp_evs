@@ -66,8 +66,10 @@ def watch(email, capture, heartbeat, passthrough, *job):
                 )
             mail(mail_server, 25, msg)
     if passthrough:
-        print(result.stdout)
-        print(result.stderr)
+        if result.stdout:
+            print(result.stdout)
+        if result.stderr:
+            print(result.stderr, file=sys.stderr)
         sys.exit(result.returncode)
     sys.exit(0)
 
