@@ -1,14 +1,15 @@
 #!/usr/local/bin/suid-python
-from __future__ import print_function, unicode_literals
+from __future__ import print_function
+# from __future__ import print_function, unicode_literals
 
 from dbf import Date
-from path import Path
+from antipathy import Path
 from scription import *
 from tempfile import mkdtemp
 import os
 import pwd
 
-settings = IniFile('/etc/openerp/fnx.ini', section='postgres', types={'_path':unicode})
+settings = IniFile('/etc/openerp/fnx.ini', section='postgres')
 PSQLCMD = '%(psql)s %%(port)s' % settings
 PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
 DAILY_STORAGE = Path(settings.daily)
@@ -23,6 +24,26 @@ POSTGRES_IDS = tuple(pwd.getpwnam('postgres')[2:4])
 ACTUAL_IDS = os.getuid(), os.getgid()
 TEMP = None
 PORT = None
+
+
+@Script()
+def main():
+    global START_DIR, TEMP
+    if not DAILY_STORAGE.exists():
+        raise SystemExit('%s needs to be created, and owned by postgres' % DAILY_STORAGE)
+    if not MONTHLY_STORAGE.exists():
+        raise SystemExit('%s needs to be created, and owned by postgres' % MONTHLY_STORAGE)
+    START_DIR = Path.getcwd()
+    try:
+        with user_ids(*POSTGRES_IDS):
+            TEMP = Path(mkdtemp(dir=unicode('/tmp'), suffix='_pgdbs'))
+        script_command()
+        print('finished')
+    finally:
+        if TEMP:
+            TEMP.rmtree()
+        START_DIR.chdir()
+
 
 @Command(
         dbs=('database(s) to backup [default: all dbs]', MULTI),
@@ -172,11 +193,11 @@ def restore(db, date, file, new_db):
                     if not get_response('\nthis cannot be undone -- are you sure?'):
                         raise SystemExit('database restore aborted')
                     # drop...
-                    _psql('-c "DROP DATABASE %s;"' % new_db, verbose=True)
+                    _psql('-c "DROP DATABASE %s;"' % new_db)
                 elif answer == 'rename':
-                    print('\ncurrent databases:')
+                    print('\ncurrent databases:', verbose=0)
                     for db in current_dbs:
-                        print('  ', db)
+                        print('  ', db, verbose=0)
                     new_name = get_response(
                             '\nnew database name:',
                             validate=lambda name: name not in current_dbs,
@@ -184,12 +205,12 @@ def restore(db, date, file, new_db):
                             retry='that name is also in use, please choose another',
                             )
                     # rename...
-                    _psql('-c "ALTER DATABASE %s RENAME TO %s;"' % (new_db, new_name), verbose=True)
+                    _psql('-c "ALTER DATABASE %s RENAME TO %s;"' % (new_db, new_name))
                 else:
                     raise Exception('unable to process response of %r' % answer)
         else:
             # overwrite test_ databases
-            _psql('-c "DROP DATABASE IF EXISTS %s;"' % new_db, verbose=True)
+            _psql('-c "DROP DATABASE IF EXISTS %s;"' % new_db)
         # at this point we are good to restore...
         #
         # (re)create the new database
@@ -197,15 +218,14 @@ def restore(db, date, file, new_db):
         if dest_file.exists():
             dest_file.remove()
         log_file = Path(new_db+'.log')
-        _psql('''-c "CREATE DATABASE %s TEMPLATE template1 ENCODING 'unicode';"''' % new_db, verbose=True)
+        _psql('''-c "CREATE DATABASE %s TEMPLATE template1 ENCODING 'unicode';"''' % new_db)
         try:
             error = None
             _psql(
                     '--log-file %(log)s --echo-all --file %(sql)s %(db_name)s'
                     % dict(sql=sql_file, db_name=new_db, log=log_file),
-                    verbose=True,
                     )
-            _psql('-c "ALTER DATABASE %s OWNER TO openerp;"' % new_db, verbose=True)
+            _psql('-c "ALTER DATABASE %s OWNER TO openerp;"' % new_db)
         except Exception, exc:
             error = exc
         with user_ids(0, 0):
@@ -222,16 +242,16 @@ def _backup(db, filename):
     print('   %s' % db, end='')
     result = Execute(pg_dump)
     if result.returncode:
-        print(' -- FAILED')
+        print(' -- FAILED', file=stderr)
     else:
         print()
     if result.stdout:
         for line in result.stdout.split('\n'):
             print('   %s' % line)
     if result.returncode:
-        print('       %s' % pg_dump)
+        print('       %s' % pg_dump, file=stderr)
         for line in result.stderr.split('\n'):
-            print('      %s' % line)
+            print('      %s' % line, file=stderr)
         print()
     return not result.returncode
 
@@ -244,8 +264,8 @@ def _extract(name, found):
         for line in result.stdout.split('\n'):
             print(line)
     if result.returncode:
-        for line in result.stderr.split('\n'):
-            print(line)
+        for line in result.stderr.split('\n', file=stderr):
+            print(line, file=stderr)
         raise SystemExit(result.returncode)
     return Path(name)
 
@@ -259,7 +279,7 @@ def _get_dbs():
             # template0 is special, and cannot be accessed
             dbs.append(db)
     if not dbs:
-        print('FAILED: %s' % psql)
+        print('FAILED: %s' % psql, file=stderr)
         raise SystemExit('no databases found!')
     return dbs
 
@@ -295,24 +315,23 @@ def _list(archive):
             if db_name:
                 dbs.append(db_name)
     if result.returncode:
-        print('FAILED: %s' % tgz_cmd)
+        print('FAILED: %s' % tgz_cmd, file=stderr)
         for line in result.stderr.split('\n'):
-            print('   %s' % line)
+            print('   %s' % line, file=stderr)
         raise SystemExit(result.returncode)
     return dbs
 
-def _psql(cmd, verbose=False):
+def _psql(cmd):
     cmd = '%s %s' % (PSQLCMD, cmd)
-    if verbose:
-        print()
-        print(cmd)
+    print(verbose=2)
+    print(cmd, verbose=2)
     with user_ids(*POSTGRES_IDS):
         result = Execute(cmd)
     if result.returncode:
         if result.returncode != -1:
-            print('FAILED: <%d> %s' % (result.returncode, cmd))
+            print('FAILED: <%d> %s' % (result.returncode, cmd), file=stderr)
         for line in result.stderr.split('\n'):
-            print('   %s' % line)
+            print('   %s' % line, file=stderr)
         if result.returncode != -1:
             raise SystemExit(result.returncode)
     return result.stdout
@@ -328,7 +347,7 @@ def _remove_excess(storage):
             for target in found[60:]:
                 target.remove()
     except:
-        print(sys.exc_info())
+        print(sys.exc_info(), file=stderr)
         raise
 
 def _tgz(source_path, target_path, id=None):
@@ -343,9 +362,9 @@ def _tgz(source_path, target_path, id=None):
         for line in result.stdout.split('\n'):
             print('   %s' % line)
     if result.returncode:
-        print('FAILED: %s' % tgz_cmd)
+        print('FAILED: %s' % tgz_cmd, file=stderr)
         for line in result.stderr.split('\n'):
-            print('   %s' % line)
+            print('   %s' % line, file=stderr)
         raise SystemExit(result.returncode)
     print('\ncompressing . . .')
     archive_cmd = COMPRESS % dict(target_name=target)
@@ -354,27 +373,11 @@ def _tgz(source_path, target_path, id=None):
         for line in result.stdout.split('\n'):
             print('   %s' % line)
     if result.returncode:
-        print('FAILED: %s' % archive_cmd)
+        print('FAILED: %s' % archive_cmd, file=stderr)
         for line in result.stderr.split('\n'):
-            print('   %s' % line)
+            print('   %s' % line, file=stderr)
         raise SystemExit(result.returncode)
     target += '.gz'
     return target
 
-if __name__ == '__main__':
-    if not DAILY_STORAGE.exists():
-        raise SystemExit('%s needs to be created, and owned by postgres' % DAILY_STORAGE)
-    if not MONTHLY_STORAGE.exists():
-        raise SystemExit('%s needs to be created, and owned by postgres' % MONTHLY_STORAGE)
-    START_DIR = Path.getcwd()
-    # if ACTUAL_IDS == (0, 0) and :
-    #     Path('/home').chdir()
-    try:
-        with user_ids(*POSTGRES_IDS):
-            TEMP = Path(mkdtemp(dir='/tmp', suffix='_pgdbs'))
-        Run()
-        print('finished')
-    finally:
-        if TEMP:
-            TEMP.rmtree()
-        START_DIR.chdir()
+Main()
