@@ -30,7 +30,7 @@ def test_mail(email, server=mail_server):
 
 
 @Command(
-        email=('Who to send job output to.', OPTION, ),
+        email=('Who to send job output to.', MULTI, ),
         capture=('Send all output to <email>', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
@@ -47,9 +47,9 @@ def watch(email, capture, heartbeat, passthrough, *job):
     msg = None
     if 'ERROR' in result.stdout or result.returncode or result.stderr:
         failed = True
-        if email:
+        for address in email:
             msg = message % (
-                email,
+                address,
                 'job failed:  %s' % job[0].split('/')[-1],
                 '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' %
                 (' '.join(job), result.returncode, result.stdout, result.stderr),
