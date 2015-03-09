@@ -129,10 +129,10 @@ def list(date, file, daily, monthly):
     if sum(1 for p in [date, file, daily, monthly] if p) != 1:
         help('at least one (and only one) of DATE, FILE, DAILY, and MONTHLY may be specified')
     if daily:
-        for file in DAILY_STORAGE.glob('*'):
+        for file in sorted(DAILY_STORAGE.glob('*')):
             print(file, verbose=0)
     elif monthly:
-        for file in MONTHLY_STORAGE.glob('*'):
+        for file in sorted(MONTHLY_STORAGE.glob('*')):
             print(file, verbose=0)
     else:
         if date:
