@@ -118,30 +118,37 @@ def extract(date, dbs, file):
 
 @Command(
         date=('date of archive to list', OPTION, 'd', Date),
-        file=Spec('archive file to list', OPTION, 'f', Path),
+        file=('archive file to list', OPTION, 'f', Path),
+        daily=('show all daily backups', FLAG, None),
+        monthly=('show all monthly backups', FLAG),
         )
-def list(date, file):
+def list(date, file, daily, monthly):
     """
     show all tables archived for DATE, or stored in FILE
     """
-    if date and file:
-        raise ValueError('only one of DATE and FILE may be specified')
-    if not (date or file):
-        raise ValueError('must have one of DATE or FILE')
-    if date:
-        found = DAILY_STORAGE.glob('%s*' % date)
-        if not found:
-            found = MONTHLY_STORAGE.glob('%s*' % date)
+    if sum(1 for p in [date, file, daily, monthly] if p) != 1:
+        help('at least one (and only one) of DATE, FILE, DAILY, and MONTHLY may be specified')
+    if daily:
+        for file in DAILY_STORAGE.glob('*'):
+            print(file, verbose=0)
+    elif monthly:
+        for file in MONTHLY_STORAGE.glob('*'):
+            print(file, verbose=0)
+    else:
+        if date:
+            found = DAILY_STORAGE.glob('%s*' % date)
             if not found:
-                raise ValueError('no files found for %s' % date)
-        if len(found) > 1:
-            raise ValueError('should only have one match, but found %s' % ', '.join(found))
-        [file] = found
-    print(file)
-    db_names = _list(file)
-    for name in db_names:
-        print('   %s' % name)
-    print()
+                found = MONTHLY_STORAGE.glob('%s*' % date)
+                if not found:
+                    abort('no files found for %s' % date)
+            if len(found) > 1:
+                abort('should only have one match, but found %s' % ', '.join(found))
+            [file] = found
+        print(file)
+        db_names = _list(file)
+        for name in db_names:
+            print('   %s' % name, verbose=0)
+        print()
         
 
 @Command(
