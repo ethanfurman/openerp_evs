@@ -1,0 +1,81 @@
+#!/usr/bin/env python2.7
+from __future__ import print_function, unicode_literals
+from antipathy import Path
+from collections import defaultdict
+from dbf import Table
+from re import match
+from scription import *
+
+import antipathy, dbf, scription
+
+version = 0, 0, 1
+
+@Script(
+        location=('location of datoms to query', OPTION, 'l', Path),
+        )
+def main(location):
+    print('location is %r' % location, verbose=2)
+    if location is None:
+        location = Path.getcwdu()
+    print('location is %r' % location, verbose=2)
+    module.location = location
+    # look for a datom.cfg file
+    if location.exists('datom.cfg'):
+        print('reading %s' % (location/'datom.cfg'))
+        module.config = OrmFile(location/'datom.cfg', types={'_path':Path})
+    else:
+        print('no datom.cfg found')
+
+@Command(
+        datom=('particular datom files to show', OPTION, 'd', unicode.lower),
+        )
+@Alias('list')
+def list_datoms(datom='all'):
+    if config is None:
+        print('WARNING: no datom.cfg found, using file search method', file=stderr)
+        if datom == 'all':
+            location = (module.location/'*', )
+        else:
+            location = (module.location / datom + '*', )
+    else:
+        print('checking for datom(s): %r' % datom)
+        if datom == 'all':
+            print('getting all datoms', verbose=2)
+            location = config.datoms.__dict__.values()
+        elif datom in config.datoms.__dict__:
+            print('getting single datom', verbose=2)
+            location = [config.datoms[datom], ]
+        else:
+            print('preparing error message', verbose=2)
+            tracked = config.datoms.__dict__.keys()
+            abort('%r not found in datom.cfg [found: %s]' % (datom, ', '.join(tracked)))
+    print('looking for datoms in %r' % location)
+    found = _get_datoms_from_files(location)
+    if not found:
+        abort('no datoms found at %s' % location)
+    if datom == 'all':
+        # just print the datom names
+        print(' '.join(found.keys()), verbose=0)
+        return
+    for d, listing in sorted(found.items()):
+        print('found datom: %r' % d, verbose=2)
+        if d.lower() != datom:
+            continue
+        print(' '.join(listing), verbose=0)
+
+
+def _get_datoms_from_files(patterns):
+    result = defaultdict(list)
+    for p in patterns:
+        for f in p.glob():
+            print(f, verbose=2)
+            m = match('[A-Za-z_-]+', f.filename)
+            if m:
+                result[m.group().strip('_-')].append(f.filename)
+    return result
+
+config = None
+
+Main()
+
+# vim: tabstop=4 softtabstop=4 shiftwidth=4 expandtab scrolloff=2 hlsearch number
