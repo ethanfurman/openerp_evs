@@ -18,6 +18,7 @@ except:
 
             %s""")
     mail_server = 'localhost'
+    notify_list = ['root']
 
 
 @Command(
@@ -25,20 +26,21 @@ except:
         server=('Server to use', OPTION),
         )
 def test_mail(email, server=mail_server):
+    "send a test message to EMAIL via SERVER"
     msg = message % (email, 'test mail', 'hope you got this! :)')
     mail(mail_server, 25, msg)
 
 
 @Command(
-        email=('Who to send job output to.', MULTI, ),
+        email=Spec('Who to send job output to.', MULTI, default=notify_list),
         capture=('Send all output to <email>', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
         job=('job to run', REQUIRED, ),
         )
 def watch(email, capture, heartbeat, passthrough, *job):
-    if not email and (capture or heartbeat):
-        help('EMAIL must be specified if either of CAPTURE or HEARTBEAT are')
+    "monitor a job, sending results/status to EMAIL"
+    print('email addresses:', email)
     failed = False
     start = time()
     result = Execute(job)
@@ -46,8 +48,10 @@ def watch(email, capture, heartbeat, passthrough, *job):
     elapsed = stop - start
     msg = None
     if 'ERROR' in result.stdout or result.returncode or result.stderr:
+        print('error encountered, sending mail')
         failed = True
         for address in email:
+            print('  to', address, 'via', mail_server, verbose=2)
             msg = message % (
                 address,
                 'job failed:  %s' % job[0].split('/')[-1],
@@ -57,21 +61,28 @@ def watch(email, capture, heartbeat, passthrough, *job):
             mail(mail_server, 25, msg)
     else:
         if heartbeat:
-            msg = message % (
-                email,
-                'heartbeat: %s' % job[0].split('/')[-1],
-                'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
-                )
-            mail(mail_server, 25, msg)
+            print('sending heartbeat')
+            for address in email:
+                print('  to', address, 'via', mail_server, verbose=2)
+                msg = message % (
+                    address,
+                    'heartbeat: %s' % job[0].split('/')[-1],
+                    'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
+                    )
+                mail(mail_server, 25, msg)
         if capture and result.stdout:
-            msg = message % (
-                email,
-                'job:  %s' % job[0].split('/')[-1],
-                '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
-                (' '.join(job), elapsed, result.stdout),
-                )
-            mail(mail_server, 25, msg)
+            print('sending captured output')
+            for address in email:
+                print('  to', address, 'via', mail_server, verbose=2)
+                msg = message % (
+                    address,
+                    'job:  %s' % job[0].split('/')[-1],
+                    '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
+                    (' '.join(job), elapsed, result.stdout),
+                    )
+                mail(mail_server, 25, msg)
     if passthrough or (failed and not email):
+        print('relaying job output')
         if result.stdout:
             print(result.stdout, verbose=0)
         if result.stderr:
@@ -82,6 +93,7 @@ def watch(email, capture, heartbeat, passthrough, *job):
 
 @Command()
 def check_cron():
+    "search crontab for cronaide entries that have been commented out"
     with open('/etc/crontab') as crontab:
         warnings = []
         for line in crontab:
@@ -89,7 +101,10 @@ def check_cron():
                 _, email, prog = line.rsplit(':', 2)
                 cron_check = next(crontab)
                 if cron_check[0] == '#':
-                    addresses = email.split(',')
+                    if email.strip():
+                        addresses = email.split(',')
+                    else:
+                        addresses = notify_list
                     for addr in addresses:
                         warnings.append((addr, prog))
         warnings.sort()
@@ -106,10 +121,11 @@ if __name__ == '__main__':
         Run()
     except (ScriptionError, ), exc:
         body = tb.format_exc()
-        mail(
-            mail_server,
-	        25,
-            message % (primary, exc.command_line, body),
-            )
+        for address in notify_list:
+            mail(
+                mail_server,
+                25,
+                message % (address, exc.command_line, body),
+                )
         raise
 
