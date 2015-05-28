@@ -119,13 +119,13 @@ def check_cron():
 if __name__ == '__main__':
     try:
         Run()
-    except (ScriptionError, ), exc:
+    except Exception:
         body = tb.format_exc()
         for address in notify_list:
             mail(
                 mail_server,
                 25,
-                message % (address, exc.command_line, body),
+                message % (address, ' '.join(sys.argv), body),
                 )
         raise
 
