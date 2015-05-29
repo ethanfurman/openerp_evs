@@ -1,0 +1,26 @@
+"""
+rewrites the shebang line of evs scripts to start with the same
+interpreter that is running this script -- hence, no shebang line
+here, you must start with whichever python you desire
+
+the new scripts are written to the parent directory (/usr/local/bin
+in most cases)
+"""
+
+import os
+import sys
+
+new_shebang = '#!' + sys.executable
+for f in os.listdir('.'):
+    if os.path.isdir(f) or '.' in f or not os.path.exists('../'+f):
+        continue
+    data = open(f).read()
+    first_line, data = data.split('\n', 1)
+    if first_line[:2] != '#!' or 'python' not in first_line or 'suid-python' in first_line:
+        print('%s: skipping' % f)
+        continue
+    print('%s: %r -> %r' % (f, first_line, new_shebang))
+    fh = open('../'+f, 'w')
+    fh.write(new_shebang + '\n')
+    fh.write(data)
+    fh.close()
