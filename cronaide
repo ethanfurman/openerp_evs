@@ -50,37 +50,30 @@ def watch(email, capture, heartbeat, passthrough, *job):
     if 'ERROR' in result.stdout or result.returncode or result.stderr:
         print('error encountered, sending mail')
         failed = True
-        for address in email:
-            print('  to', address, 'via', mail_server, verbose=2)
-            msg = message % (
-                address,
-                'job failed:  %s' % job[0].split('/')[-1],
-                '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' %
-                (' '.join(job), result.returncode, result.stdout, result.stderr),
-                )
-            mail(mail_server, 25, msg)
+        msg = message % (
+            ','.join(email),
+            'job failed:  %s' % job[0].split('/')[-1],
+            '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' %
+            (' '.join(job), result.returncode, result.stdout, result.stderr),
+            )
+        mail(mail_server, 25, msg)
     else:
         if heartbeat:
             print('sending heartbeat')
-            for address in email:
-                print('  to', address, 'via', mail_server, verbose=2)
-                msg = message % (
-                    address,
-                    'heartbeat: %s' % job[0].split('/')[-1],
-                    'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
-                    )
-                mail(mail_server, 25, msg)
+            msg = message % (
+                ','.join(email),,
+                'heartbeat: %s' % job[0].split('/')[-1],
+                'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
+                )
+            mail(mail_server, 25, msg)
         if capture and result.stdout:
-            print('sending captured output')
-            for address in email:
-                print('  to', address, 'via', mail_server, verbose=2)
-                msg = message % (
-                    address,
-                    'job:  %s' % job[0].split('/')[-1],
-                    '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
-                    (' '.join(job), elapsed, result.stdout),
-                    )
-                mail(mail_server, 25, msg)
+            msg = message % (
+                ','.join(email),
+                'job:  %s' % job[0].split('/')[-1],
+                '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
+                (' '.join(job), elapsed, result.stdout),
+                )
+            mail(mail_server, 25, msg)
     if passthrough or (failed and not email):
         print('relaying job output')
         if result.stdout:
@@ -121,11 +114,10 @@ if __name__ == '__main__':
         Run()
     except Exception:
         body = tb.format_exc()
-        for address in notify_list:
-            mail(
-                mail_server,
-                25,
-                message % (address, ' '.join(sys.argv), body),
-                )
+        mail(
+            mail_server,
+            25,
+            message % (','.join(notify_list), ' '.join(sys.argv), body),
+            )
         raise
 
