@@ -371,7 +371,7 @@ def _tgz(source_path, target_path, id=None):
     if result.returncode:
         print('FAILED: %s' % tgz_cmd, file=stderr)
         for line in result.stderr.split('\n'):
-            print('   %s' % line, file=stderr)
+            print('        %s' % line, file=stderr)
         raise SystemExit(result.returncode)
     print('\ncompressing . . .')
     archive_cmd = COMPRESS % dict(target_name=target)
