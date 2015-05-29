@@ -61,7 +61,7 @@ def watch(email, capture, heartbeat, passthrough, *job):
         if heartbeat:
             print('sending heartbeat')
             msg = message % (
-                ','.join(email),,
+                ','.join(email),
                 'heartbeat: %s' % job[0].split('/')[-1],
                 'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
                 )
