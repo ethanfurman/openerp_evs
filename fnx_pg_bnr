@@ -221,9 +221,6 @@ def restore(db, date, file, new_db):
         # at this point we are good to restore...
         #
         # (re)create the new database
-        dest_file = START_DIR/new_db+'.log'
-        if dest_file.exists():
-            dest_file.remove()
         log_file = Path(new_db+'.log')
         _psql('''-c "CREATE DATABASE %s TEMPLATE template1 ENCODING 'unicode';"''' % new_db)
         try:
@@ -236,6 +233,9 @@ def restore(db, date, file, new_db):
         except Exception, exc:
             error = exc
         with user_ids(0, 0):
+            dest_file = START_DIR/new_db+'.log'
+            if dest_file.exists():
+                dest_file.remove()
             log_file.chown(*ACTUAL_IDS)
             log_file.move(dest_file)
         if error:
