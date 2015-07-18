@@ -68,20 +68,20 @@ def backup(dbs, id):
             file = template % db
             if not _backup(db, file) and not db.startswith('template'):
                 failures = True
-        # then, combine them all into a single tar.gz file
-        tgz_file = _tgz(TEMP, storage, id)
-        # finally, make a copy in monthly if today is the first
-        # but only if store == True
-        if store:
-            if TODAY.day == 1:
-                tgz_file.copy(MONTHLY_STORAGE)
-            _remove_excess(DAILY_STORAGE)
-        else:
-            with user_ids(0, 0):
-                tgz_file.chown(*ACTUAL_IDS)
-                tgz_file.copy(START_DIR)
-        if failures:
-            raise SystemExit('not all databases backed up')
+    # postgres is backed up, revert to root privilege
+    # then, combine them all into a single tar.gz file
+    tgz_file = _tgz(TEMP, storage, id)
+    # finally, make a copy in monthly if today is the first
+    # but only if store == True
+    if store:
+        if TODAY.day == 1:
+            tgz_file.copy(MONTHLY_STORAGE)
+        _remove_excess(DAILY_STORAGE)
+    else:
+        tgz_file.chown(*ACTUAL_IDS)
+        tgz_file.copy(START_DIR)
+    if failures:
+        raise SystemExit('not all databases backed up')
 
 
 @Command(
