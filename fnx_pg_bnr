@@ -26,13 +26,17 @@ TEMP = None
 PORT = None
 
 
-@Script()
+@Script(
+        rescue=('ignore checks', FLAG),
+        )
 def main():
-    global START_DIR, TEMP
-    if not DAILY_STORAGE.exists():
-        raise SystemExit('%s needs to be created, and owned by postgres' % DAILY_STORAGE)
-    if not MONTHLY_STORAGE.exists():
-        raise SystemExit('%s needs to be created, and owned by postgres' % MONTHLY_STORAGE)
+    global START_DIR, TEMP, RESCUE
+    RESCUE = rescue
+    if not rescue:
+        if not DAILY_STORAGE.exists():
+            raise SystemExit('%s needs to be created, and owned by postgres' % DAILY_STORAGE)
+        if not MONTHLY_STORAGE.exists():
+            raise SystemExit('%s needs to be created, and owned by postgres' % MONTHLY_STORAGE)
     START_DIR = Path.getcwd()
     try:
         with user_ids(*POSTGRES_IDS):
@@ -53,13 +57,15 @@ def backup(dbs, id):
     _get_pg_port()
     with user_ids(*POSTGRES_IDS):
         TEMP.chdir()
-        if not dbs:
+        if not dbs and not RESCUE:
             store = True
             storage = DAILY_STORAGE
             dbs = _get_dbs()
         else:
             store = False
             storage = TEMP
+            if RESCUE and not dbs:
+                dbs = _get_dbs()
         template = '%s_%%s_pg91.sql' % TODAY
         failures = False
         # first, backup as many databases as we can
