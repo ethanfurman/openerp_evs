@@ -1,28 +1,32 @@
 #!/usr/bin/python
+from __future__ import print_function
 import os
 from datetime import datetime
-from path import Path
-from scription import Script, Run
+from antipathy import Path
+from scription import *
 
-@Script(
-        name=('file name(s) or directory name(s) to search for', 'required'),
-        path=('starting path (defaults to cwd)', 'option', 'p', Path),
-        files_only=('only search file names', 'flag'),
-        dirs_only=('only search dir names', 'flag'),
+@Command(
+        name=('file name(s) or directory name(s) to search for', ),
+        path=('starting path (defaults to cwd)', OPTION, 'p', Path),
+        files_only=('only search file names', FLAG),
+        dirs_only=('only search dir names', FLAG),
+        timestamp=('display timestamp of file', FLAG,),
         )
-def search(files_only, dirs_only, path='./', *name):
+def filesearch(files_only, dirs_only, timestamp, path='./', *name):
     "Searches for `name` in `path`."
     for tree, dirs, files in path.walk():
         if not files_only:
             for d in dirs:
                 for n in name:
                     if n in d:
-                        print tree/d
+                        print(tree/d, verbose=0)
         if not dirs_only:
             for f in files:
                 for n in name:
                     if n in f:
-                        print datetime.fromtimestamp((tree/f).stat()[8]), '   ', tree/f       # mtime
+                        if timestamp:
+                            print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', tree/f, verbose=0)       # mtime
+                        else:
+                            print(tree/f, verbose=0)       # mtime
 
-if __name__ == '__main__':
-    Run()
+Run()
