@@ -277,7 +277,7 @@ def _extract(name, found):
         for line in result.stdout.split('\n'):
             print(line)
     if result.returncode:
-        for line in result.stderr.split('\n', file=stderr):
+        for line in result.stderr.split('\n'):
             print(line, file=stderr)
         raise SystemExit(result.returncode)
     return Path(name)
