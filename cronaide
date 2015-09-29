@@ -4,6 +4,7 @@ from __future__ import print_function
 from itertools import groupby
 from textwrap import dedent
 from scription import *
+from socket import getfqdn
 from time import time
 import traceback as tb
 import sys
@@ -12,11 +13,11 @@ try:
     execfile('/etc/evs/cronaide.conf')
 except:
     message = dedent("""\
-            To: %s
-            From: cron_check <noreply@nowhere.invalid>
-            Subject: %s
+            To: %%s
+            From: cron_check <noreply@%s>
+            Subject: %%s
 
-            %s""")
+            %%s""" % (getfqdn() or 'nowhere.invalid')
     mail_server = 'localhost'
     notify_list = ['root']
 
@@ -51,7 +52,7 @@ def watch(email, capture, heartbeat, passthrough, *job):
         print('error encountered, sending mail')
         failed = True
         msg = message % (
-            ','.join(email),
+            ','.join(email or notify_list),
             'job failed:  %s' % job[0].split('/')[-1],
             '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' %
             (' '.join(job), result.returncode, result.stdout, result.stderr),
@@ -61,14 +62,14 @@ def watch(email, capture, heartbeat, passthrough, *job):
         if heartbeat:
             print('sending heartbeat')
             msg = message % (
-                ','.join(email),
+                ','.join(email or notify_list),
                 'heartbeat: %s' % job[0].split('/')[-1],
                 'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
                 )
             mail(mail_server, 25, msg)
         if capture and result.stdout:
             msg = message % (
-                ','.join(email),
+                ','.join(email or notify_list),
                 'job:  %s' % job[0].split('/')[-1],
                 '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
                 (' '.join(job), elapsed, result.stdout),
@@ -120,4 +121,3 @@ if __name__ == '__main__':
             message % (','.join(notify_list), ' '.join(sys.argv), body),
             )
         raise
-
