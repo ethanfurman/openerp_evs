@@ -17,7 +17,7 @@ except:
             From: cron_check <noreply@%s>
             Subject: %%s
 
-            %%s""" % (getfqdn() or 'nowhere.invalid')
+            %%s""" % (getfqdn() or 'nowhere.invalid'))
     mail_server = 'localhost'
     notify_list = ['root']
 
