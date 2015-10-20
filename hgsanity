@@ -1,0 +1,83 @@
+#!/usr/bin/env python
+from __future__ import print_function
+
+from antipathy import Path
+from scription import *
+from scription import _namespace as NS
+
+import ast
+import os
+import py_compile
+import traceback
+
+@Command(
+        files=Spec('files to check for syntax errors', OPTION, type=Path),
+        )
+def hgsanity(*files):
+    "Check for syntax errors, tab indentation, and trailing whitespace"
+    if not files:
+        hg = extract_hg()
+        if not hg.names:
+            abort('hgsanity should be called with filenames to check, or as an hg hook')
+        files = Execute('hg log -r %s --template {files}' % hg.node).stdout.split()
+        repo = Path(hg.pending)
+    else:
+        repo = None
+    notes = []
+    lastfile = None
+    for file in files:
+        if repo:
+            path = repo / file
+        else:
+            path = file
+        if filetype(path) == 'python':
+            with open(path) as f:
+                data = f.read()
+            try:
+                # first check for syntax errors
+                ast.parse(data, path)
+            except Exception as e:
+                notes.append('-' * 50 + '\n')
+                notes.extend(traceback.format_exception_only(type(e), e))
+            else:
+                # then check mixed tab indentation and trailing whitespace
+                for i, line in enumerate(data.split('\n'), start=1):
+                    for ch in line:
+                        if ch not in ' \t':
+                            break
+                        elif ch == '\t':
+                            if lastfile != file:
+                                notes.append('-' * 50 + '\n')
+                                lastfile = file
+                            notes.append('%s: tab indentation in line %d\n' % (file, i))
+                            break
+                    if line and line[-1] in ' \t':
+                        if lastfile != file:
+                            notes.append('-' * 50 + '\n')
+                            lastfile = file
+                        notes.append('%s: trailing whitespace in line %d\n' % (file, i))
+    if notes:
+        notes.append('-' * 50)
+        print(' ', '  '.join(notes), file=stderr)
+        raise SystemExit(1)
+
+def extract_hg():
+    ns = NS()
+    ns.names = []
+    for k, v in os.environ.items():
+        if k.startswith('HG_'):
+            name = k[3:].lower()
+            ns.names.append(name)
+            ns[name] = v
+    return ns
+
+def filetype(path):
+    if path.ext == '.py' or path.ext == '' and 'python' in firstline(path):
+        return 'python'
+    return 'unknown'
+
+def firstline(path):
+    with open(path) as f:
+        return f.readline()
+
+Main()
