@@ -30,6 +30,8 @@ def hgsanity(*files):
             path = repo / file
         else:
             path = file
+        if path.isdir():
+            continue
         if filetype(path) == 'python':
             with open(path) as f:
                 data = f.read()
