@@ -5,6 +5,7 @@ from itertools import groupby
 from textwrap import dedent
 from scription import *
 from socket import getfqdn
+from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON
 from time import time
 import traceback as tb
 import sys
@@ -19,7 +20,7 @@ except:
 
             %%s""" % (getfqdn() or 'nowhere.invalid'))
     mail_server = 'localhost'
-    notify_list = ['root']
+    notify_list = ['root@localhost']
 
 
 @Command(
@@ -42,8 +43,10 @@ def test_mail(email, server=mail_server):
 def watch(email, capture, heartbeat, passthrough, *job):
     "monitor a job, sending results/status to EMAIL"
     print('email addresses:', email)
+    openlog('AIDE', LOG_PID, LOG_CRON)
     failed = False
     start = time()
+    syslog(LOG_INFO, 'start')
     result = Execute(job)
     stop = time()
     elapsed = stop - start
@@ -52,29 +55,35 @@ def watch(email, capture, heartbeat, passthrough, *job):
         print('error encountered, sending mail')
         failed = True
         msg = message % (
-            ','.join(email or notify_list),
+            ','.join(email),
             'job failed:  %s' % job[0].split('/')[-1],
             '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' %
             (' '.join(job), result.returncode, result.stdout, result.stderr),
             )
         mail(mail_server, 25, msg)
+        syslog(LOG_INFO, 'failed; mail sent')
     else:
         if heartbeat:
             print('sending heartbeat')
             msg = message % (
-                ','.join(email or notify_list),
+                ','.join(email),
                 'heartbeat: %s' % job[0].split('/')[-1],
                 'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
                 )
             mail(mail_server, 25, msg)
         if capture and result.stdout:
+            print('catch and release')
             msg = message % (
-                ','.join(email or notify_list),
+                ','.join(email),
                 'job:  %s' % job[0].split('/')[-1],
                 '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
                 (' '.join(job), elapsed, result.stdout),
                 )
             mail(mail_server, 25, msg)
+        if msg:
+            syslog(LOG_INFO, 'succeeded; mail sent')
+        else:
+            syslog(LOG_INFO, 'succeeded')
     if passthrough or (failed and not email):
         print('relaying job output')
         if result.stdout:
@@ -115,6 +124,7 @@ if __name__ == '__main__':
         Run()
     except Exception:
         body = tb.format_exc()
+        print(body)
         mail(
             mail_server,
             25,

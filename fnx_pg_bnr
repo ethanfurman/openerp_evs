@@ -90,6 +90,11 @@ def backup(dbs, id):
         raise SystemExit('not all databases backed up')
 
 
+@Command()
+def dbs():
+    print('databases available: ', ', '.join(_get_dbs()), verbose=0)
+
+
 @Command(
         date=Spec('date of archive file', OPTION, None, Date),
         dbs=Spec('names of dbs to extract [default: all]', MULTI, None),
