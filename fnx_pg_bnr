@@ -155,7 +155,7 @@ def list(date, file, daily, monthly):
         for name in db_names:
             print('   %s' % name, verbose=0)
         print()
-        
+
 
 @Command(
         date=('date of archive to restore from', OPTION, None, Date),
