@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 from __future__ import print_function
 
 from antipathy import Path
@@ -23,13 +23,10 @@ def hgblacklist():
     blacklist_cfg = cfg.configitems('blacklist')
     blacklisted = []
     for name, value in blacklist_cfg:
-        if name == 'file':
-            blacklisted.append(value)
-        elif name == 'files':
-            blacklisted.extend(value.split(','))
+        if name == 'files':
+            blacklisted.extend(value.split('\n'))
         else:
             abort('unknown setting in [blacklist] -> %s' % name)
-    print('blacklisted files:\n', '\n  '.join(blacklisted))
     notes = []
     for file in files:
         if file in blacklisted:
