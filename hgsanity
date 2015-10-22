@@ -30,7 +30,11 @@ def hgsanity(*files):
             path = repo / file
         else:
             path = file
-        if path.isdir():
+        if not repo and path.isdir():
+            # no recursing yet
+            continue
+        if repo and not path.exists():
+            # file is being removed
             continue
         if filetype(path) == 'python':
             with open(path) as f:
