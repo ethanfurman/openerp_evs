@@ -52,12 +52,13 @@ def main():
 @Command(
         dbs=('database(s) to backup [default: all dbs]', MULTI),
         id=('extra info for extra backups (appears in compressed file name)', OPTION),
+        dst=('where to put backup', OPTION, Path, None),
         )
-def backup(dbs, id):
+def backup(dbs, id, dst):
     _get_pg_port()
     with user_ids(*POSTGRES_IDS):
         TEMP.chdir()
-        if not dbs and not RESCUE:
+        if not dbs and not RESCUE and not dst:
             store = True
             storage = DAILY_STORAGE
             dbs = _get_dbs()
@@ -85,7 +86,7 @@ def backup(dbs, id):
         _remove_excess(DAILY_STORAGE)
     else:
         tgz_file.chown(*ACTUAL_IDS)
-        tgz_file.copy(START_DIR)
+        tgz_file.copy(dst or START_DIR)
     if failures:
         raise SystemExit('not all databases backed up')
 
