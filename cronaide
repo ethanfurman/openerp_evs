@@ -128,6 +128,10 @@ def watch(email, capture, heartbeat, passthrough, *job):
 @Command()
 def check_cron():
     "search crontab for cronaide entries that have been commented out"
+    openlog('AIDE', LOG_PID, LOG_CRON)
+    ppid = os.getppid()
+    syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
+    msg = None
     with open('/etc/crontab') as crontab:
         warnings = []
         for line in crontab:
@@ -148,6 +152,9 @@ def check_cron():
                 prog_names.append(prog)
             msg = message % (email, 'disabled cron jobs', '\n%s'%'\n\t'.join(prog_names))
             mail(mail_server, 25, msg)
+            syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
+    if msg is None:
+        syslog(LOG_INFO, '[from %s] succeeded' % ppid)
 
 
 @Command()
