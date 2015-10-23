@@ -1,12 +1,16 @@
 #!/usr/bin/env python2.7
 from __future__ import print_function
 
+from antipathy import Path
 from itertools import groupby
-from textwrap import dedent
+from textwrap import dedent, wrap
 from scription import *
 from socket import getfqdn
 from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON
 from time import time
+import gzip
+import os
+import re
 import traceback as tb
 import sys
 
@@ -40,13 +44,15 @@ def test_mail(email, server=mail_server):
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
         job=('job to run', REQUIRED, ),
         )
+@Alias('cronaide')
 def watch(email, capture, heartbeat, passthrough, *job):
     "monitor a job, sending results/status to EMAIL"
     print('email addresses:', email)
+    ppid = os.getppid()
     openlog('AIDE', LOG_PID, LOG_CRON)
     failed = False
     start = time()
-    syslog(LOG_INFO, 'start')
+    syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
     result = Execute(job)
     stop = time()
     elapsed = stop - start
@@ -61,7 +67,7 @@ def watch(email, capture, heartbeat, passthrough, *job):
             (' '.join(job), result.returncode, result.stdout, result.stderr),
             )
         mail(mail_server, 25, msg)
-        syslog(LOG_INFO, 'failed; mail sent')
+        syslog(LOG_INFO, '[from %s] failed; mail sent')
     else:
         if heartbeat:
             print('sending heartbeat')
@@ -81,9 +87,9 @@ def watch(email, capture, heartbeat, passthrough, *job):
                 )
             mail(mail_server, 25, msg)
         if msg:
-            syslog(LOG_INFO, 'succeeded; mail sent')
+            syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
         else:
-            syslog(LOG_INFO, 'succeeded')
+            syslog(LOG_INFO, '[from %s] succeeded' % ppid)
     if passthrough or (failed and not email):
         print('relaying job output')
         if result.stdout:
@@ -119,12 +125,119 @@ def check_cron():
             mail(mail_server, 25, msg)
 
 
+@Command()
+def check_syslog():
+    "search crontab and syslog and verify that crontab entries of cronaide are running properly"
+    crontab = read('/etc/crontab')
+    cron_jobs = {}
+    commands = []
+    for line in crontab.split('\n'):
+        cronjob, command = is_cronaide(line)
+        if command:
+            commands.append(command)
+            cron_jobs[command] = cronjob
+            print('appended:', command, verbose=2)
+    syslogs = Path('/var/log').glob('syslog*')
+    syslogs.sort()
+    aide = {}
+    done = set()
+    try:
+        for sl in syslogs:
+            print('checking %s...' % sl)
+            sl = read(sl)
+            sl = sl.split('\n')
+            sl.reverse()
+            for line in sl:
+                match = re.search('AIDE\[(\d*)\]: \[from (\d*)\] (.*)', line)
+                if match:
+                    pid, ppid, msg = match.groups()
+                    entry = aide.setdefault(ppid, {})
+                    entry['child'] = pid
+                    if msg.startswith('start'):
+                        entry['start'] = msg
+                    else:
+                        entry['stop'] = msg
+                    continue
+                match = re.search('CRON\[(\d*)\]: \(\w*\) CMD \((.*)\)', line)
+                if match:
+                    ppid, msg = match.groups()
+                    if msg.split()[0].endswith('cronaide'):
+                        entry = aide.setdefault(ppid, {})
+                        entry['command'] = command = ' '.join(msg.split())
+                        try:
+                            if command in done or command not in cron_jobs:
+                                # ignore old versions and duplicates
+                                del aide[ppid]
+                            else:
+                                print('removing:', command)
+                                done.add(command)
+                                commands.remove(entry['command'])
+                        except ValueError:
+                            print('msg:', msg, '\ndone:', done, '\nentry:', entry, '\ncommand list:', commands, file=stderr)
+                            raise
+                        if not commands:
+                            raise BreakLoop
+    except BreakLoop:
+        pass
+    succeeded = []
+    failed = []
+    errored = []
+    missing = []
+    if commands:
+        for cmd in commands:
+            missing.append(cmd)
+    for ppid, entry in aide.items():
+        if 'command' not in entry:
+            # currently running, ignore
+            continue
+        cronjob = cron_jobs[entry['command']]
+        if 'stop' in entry:
+            msg = entry['stop']
+            if msg.startswith('failed'):
+                failed.append(cronjob)
+            elif msg.startswith('succeeded'):
+                succeeded.append(cronjob)
+            else:
+                print('unknown message for:\n  cronjob: %s\n  message: %s' % (cronjob, msg), file=stderr)
+        else:
+            errored.append(cronjob)
+    for job in missing:
+        print('\nM: ', '\n    '.join(wrap(job)), verbose=0)
+    for job in errored:
+        print('\nE: ', '\n    '.join(wrap(job)), verbose=0)
+    for job in succeeded:
+        print('\nS: ', '\n    '.join(wrap(job)), verbose=0)
+    for job in failed:
+        print('\nF: ', '\n    '.join(wrap(job)), verbose=0)
+
+
+def read(filename):
+    if filename.endswith('.gz'):
+        open_file = gzip.open
+    else:
+        open_file = open
+    with open_file(filename) as f:
+        return f.read()
+
+def is_cronaide(line):
+    "determine if crontab line is calling cronaide"
+    if line and line[0] != '#':
+        segments = line.split()
+        if len(segments) > 6:
+            command = segments[6]
+            if command.endswith('cronaide'):
+                return ' '.join(segments), ' '.join(segments[6:])
+    return False, False
+
+class BreakLoop(Exception):
+    pass
+
 if __name__ == '__main__':
     try:
         Run()
     except Exception:
         body = tb.format_exc()
-        print(body)
+        print('mailing to:', ','.join(notify_list))
         mail(
             mail_server,
             25,
