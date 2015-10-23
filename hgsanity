@@ -8,6 +8,7 @@ from scription import _namespace as NS
 import ast
 import os
 import py_compile
+import re
 import traceback
 
 @Command(
@@ -43,26 +44,36 @@ def hgsanity(*files):
                 # first check for syntax errors
                 ast.parse(data, path)
             except Exception as e:
-                notes.append('-' * 50 + '\n')
+                lastfile = file
                 notes.extend(traceback.format_exception_only(type(e), e))
             else:
-                # then check mixed tab indentation and trailing whitespace
+                # then check mixed tab indentation and trailing whitespace,
+                # and forgotten pdb.set_trace()
                 for i, line in enumerate(data.split('\n'), start=1):
+                    if re.search('\s*#', line):
+                        # ignore comment lines
+                        continue
+                    if re.search('pdb\s*\.\s*set_trace\s*(\s*)', line):
+                        if lastfile not in (None, file):
+                            notes.append('-' * 50 + '\n')
+                            lastfile = file
+                        notes.append('%s: pdb.''set_trace() found in line %d\n' % (file, i))
                     for ch in line:
                         if ch not in ' \t':
                             break
                         elif ch == '\t':
-                            if lastfile != file:
+                            if lastfile not in (None, file):
                                 notes.append('-' * 50 + '\n')
                                 lastfile = file
                             notes.append('%s: tab indentation in line %d\n' % (file, i))
                             break
                     if line and line[-1] in ' \t':
-                        if lastfile != file:
+                        if lastfile not in (None, file):
                             notes.append('-' * 50 + '\n')
                             lastfile = file
                         notes.append('%s: trailing whitespace in line %d\n' % (file, i))
     if notes:
+        notes.insert(0, '-' * 50 + '\n')
         notes.append('-' * 50)
         print(' ', '  '.join(notes), file=stderr)
         raise SystemExit(1)
