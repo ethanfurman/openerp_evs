@@ -92,7 +92,7 @@ def watch(email, capture, heartbeat, passthrough, *job):
             (' '.join(job), result.returncode, result.stdout, result.stderr),
             )
         mail(mail_server, 25, msg)
-        syslog(LOG_INFO, '[from %s] failed; mail sent')
+        syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
     else:
         if heartbeat:
             print('sending heartbeat')
