@@ -4,29 +4,44 @@ import os
 from datetime import datetime
 from antipathy import Path
 from scription import *
+import re
 
 @Command(
-        name=('file name(s) or directory name(s) to search for', ),
+        regex=('pattern to match against file and directory names', ),
         path=('starting path (defaults to cwd)', OPTION, 'p', Path),
         files_only=('only search file names', FLAG),
         dirs_only=('only search dir names', FLAG),
-        timestamp=('display timestamp of file', FLAG,),
+        timestamp=('display timestamp of file', FLAG),
+        all=('show all files/directories (even hidden)', FLAG),
         )
-def filesearch(files_only, dirs_only, timestamp, path='./', *name):
+def filesearch(files_only, dirs_only, timestamp, all, path=Path.getcwd(), *regex):
     "Searches for `name` in `path`."
+    if not regex:
+        show_all = True
+    else:
+        show_all = False
     for tree, dirs, files in path.walk():
+        if not all:
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            files[:] = [f for f in files if not f.startswith('.')]
         if not files_only:
             for d in dirs:
-                for n in name:
-                    if n in d:
-                        print(tree/d, verbose=0)
+                if show_all:
+                    print(tree/d, verbose=0)
+                else:
+                    for p in regex:
+                        if re.search(p, d):
+                            print(tree/d, verbose=0)
         if not dirs_only:
             for f in files:
-                for n in name:
-                    if n in f:
-                        if timestamp:
-                            print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', tree/f, verbose=0)       # mtime
-                        else:
-                            print(tree/f, verbose=0)       # mtime
+                if show_all:
+                    print(tree/f, verbose=0)
+                else:
+                    for p in regex:
+                        if re.search(p, f):
+                            if timestamp:
+                                print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', tree/f, verbose=0)       # mtime
+                            else:
+                                print(tree/f, verbose=0)       # mtime
 
 Run()
