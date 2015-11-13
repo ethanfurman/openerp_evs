@@ -1,0 +1,264 @@
+#!/usr/bin/python
+from __future__ import print_function
+
+from antipathy import Path
+from math import floor
+from openerplib import get_connection, get_records, AttrDict
+from pwd import getpwnam
+from scription import *
+from time import time
+from xaml import Xaml
+
+import sys
+
+CONFIG = Path('/etc/openerp/fnx.ini')
+
+try:
+    settings = OrmFile(CONFIG, section='openerp')
+except Exception:
+    print('WARNING: unable to process configfile; all parameters must be specified', verbose=0)
+    HOST = ''
+    USER = ''
+    DB = ''
+    PW = ''
+else:
+    HOST = settings.host
+    USER = settings.user
+    DB = settings.db
+    PW = settings.pw
+
+@Script(
+        host=('host where OpenERP instance is running', OPTION),
+        db=('database to use', OPTION),
+        user=('login name to use', OPTION),
+        pw=('password for login name', OPTION),
+        )
+def main(host, db, user, pw):
+    if host:
+        module.HOST = host
+    if db:
+        module.DB = db
+    if user:
+        module.USER = user
+    if pw:
+        module.PW = pw
+    for req in ('HOST', 'USER', 'DB'):
+        if not module[req]:
+            raise SystemExit('%r required; use --help for more info' % req)
+    if not module.PW:
+        module.PW = get_response('password:')
+    module.OE = AttrDict()
+    module.OE.conn = get_connection(hostname=HOST, database=DB, login=USER, password=PW)
+
+@Command(
+        path=Spec('location of pdfs to sort and import', type=Path),
+        progress=Spec('show progress visually', FLAG),
+        id=Spec('id pattern to match', OPTION, type=unicode.upper),
+        )
+def c_of_a(path, progress, id):
+    '''
+    move and sort source pdfs into fnxfs file structure
+    '''
+    # -- Documents/
+    #    |-- ABC/
+    #    |   `-- BLA1000/
+    #    |       `-- BLA1000 3-22178.pdf
+    #    |-- DEF/
+    #    |-- GHIJ/
+    #    |-- KLM/
+    #    |-- NOP/
+    #    |-- QRS/
+    #    |-- TUV/
+    #    `-- WQYZ/
+    if id:
+        print('looking in %s for files matching %s' % (path, id))
+    else:
+        print('looking in %s' % (path, ))
+    files = path.listdir()
+    if progress:
+        pb = ProgressBar(len(files), message="copying %d files..." % len(files))
+    products = set()
+    for file in files:
+        if progress:
+            pb.tick()
+        if file.ext.lower() != '.pdf':
+            if not id:
+                print('skipping non-pdf: %r' % file)
+            continue
+        base = cofa_primary_level.get(file[0].lower())
+        if base is None:
+            if not id:
+                print('skipping invalid name: %r  (unable to find base)' % file)
+            continue
+        if not file[:3].isalpha() or not file[3:8].isdigit() or file[8] not in ' .':
+            if not id:
+                print('skipping invalid name: %s  (bad chars)' % file)
+            continue
+        sub = file[:8].upper()
+        if id and id not in sub:
+            continue
+        elif id:
+            print('processing %s' % file)
+        products.add(sub)
+        if not (fnx_root/base/sub).exists():
+            print('creating folder %s' % (base/sub, ))
+            (fnx_root/base/sub).mkdir()
+            (fnx_root/base/sub).chown(*OPENERP_IDS)
+            (fnx_root/base/sub).chmod(0775)
+        target = base/sub/file.base.upper() + file.ext.lower()
+        source = path/file
+        print('copying (%s) %s to (%s) %s' % (type(source), source, type(target), target))
+        _run('cp', source, target, '--force')
+    product_product = OE.conn.get_model('product.product')
+    updated_products = product_product.search_read(fields=['id','xml_id'], domain=[('xml_id','in',list(products))])
+    if progress:
+        pb = ProgressBar(len(updated_products), message='updating html for %d products' % len(updated_products))
+    for product in sorted(updated_products, key=lambda p: p.xml_id):
+        if progress:
+            pb.tick()
+        base = cofa_primary_level.get(product.xml_id[0].lower())
+        sub = product.xml_id.upper()
+        target_dir = fnx_root/base/sub
+        pdfs = target_dir.listdir()
+        pdfs.sort()
+        print('\nproduct', product.xml_id)
+        xaml_line = "%%p\n  %%a href='%s': %s"
+        xaml_list = []
+        for pdf in pdfs:
+            xaml_list.append(xaml_line % ('/fnxfs'/base/sub/pdf.filename, pdf.filename))
+        xaml_doc = Xaml('\n'.join(xaml_list)).document.string()
+        product_product.write([product.id], {'c_of_a':xaml_doc})
+
+
+@Command()
+def init():
+    'create initial locations that do not yet exist'
+    if not (fnx_root/doc_root).exists():
+        print('creating', doc_root)
+        _run('create-folder', doc_root, '--ro_users', 'all')
+    for folder in (doc_root, cofa_root, sds_root):
+        if not (fnx_root/folder).exists():
+            print('creating', folder)
+            (fnx_root/folder).mkdir()
+            (fnx_root/folder).chown(*OPENERP_IDS)
+            (fnx_root/folder).chmod(0775)
+    for folder in set(cofa_primary_level.values()):
+        if not (fnx_root/folder).exists():
+            print('creating', folder)
+            (fnx_root/folder).mkdir()
+            (fnx_root/folder).chown(*OPENERP_IDS)
+            (fnx_root/folder).chmod(0775)
+
+fnx_root = Path('/var/openerp/fnxfs/')
+doc_root = Path('Documents')
+sds_root = doc_root/'Safety Data Sheets'
+cofa_root = doc_root/'Certificates of Analysis'
+
+config = OrmFile('/etc/openerp/fnx.ini', section='fnxfsd')
+
+cofa_primary_level = {
+        'a': cofa_root/'ABC',
+        'b': cofa_root/'ABC',
+        'c': cofa_root/'ABC',
+        'd': cofa_root/'DEF',
+        'e': cofa_root/'DEF',
+        'f': cofa_root/'DEF',
+        'g': cofa_root/'GHIJ',
+        'h': cofa_root/'GHIJ',
+        'i': cofa_root/'GHIJ',
+        'j': cofa_root/'GHIJ',
+        'k': cofa_root/'KLM',
+        'l': cofa_root/'KLM',
+        'm': cofa_root/'KLM',
+        'n': cofa_root/'NOP',
+        'o': cofa_root/'NOP',
+        'p': cofa_root/'NOP',
+        'q': cofa_root/'QRS',
+        'r': cofa_root/'QRS',
+        's': cofa_root/'QRS',
+        't': cofa_root/'TUV',
+        'u': cofa_root/'TUV',
+        'v': cofa_root/'TUV',
+        'w': cofa_root/'WXYZ',
+        'x': cofa_root/'WXYZ',
+        'y': cofa_root/'WXYZ',
+        'z': cofa_root/'WXYZ',
+        }
+
+OPENERP_IDS = getpwnam('openerp')[2:4]
+
+#-----------------
+# private commands
+#-----------------
+
+def _run(*command):
+    command = list(command)
+    params = ['fnxfs', ] + command #+ ['-v'] * script_verbosity
+    try:
+        exc = None
+        dst = stdout
+        attempt = Execute(params, pty=True, timeout=60)
+        returncode = attempt.returncode
+    except ExecuteError:
+        exc = sys.exc_info()[1]
+        dst = stderr
+        attempt = exc.process
+        returncode = -1
+        print(exc, 'output from command:', sep='\n', file=stderr)
+    if attempt.stdout:
+        print(attempt.stdout, file=dst)
+    if attempt.stderr:
+        print(attempt.stderr, file=stderr)
+        raise SystemExit(returncode)
+
+class ProgressBar(object):
+    symbols = '\\|/-'
+    def __init__(yo, finalcount, block_char='.', message=None):
+        yo.instant = time()
+        yo.symbol_index = 0
+        yo.current_count = 0
+        yo.finalcount = finalcount
+        yo.blockcount = 0
+        yo.block = block_char
+        yo.f = sys.stdout
+        if not yo.finalcount:
+            return
+        if message is not None:
+            yo.f.write('\n\n%s\n' % message)
+        yo.f.write('\n-------------------- % Progress ---------------- 1\n')
+        yo.f.write('    1    2    3    4    5    6    7    8    9    0\n')
+        yo.f.write('    0    0    0    0    0    0    0    0    0    0\n')
+        yo.f.write('-')
+    def progress(yo, count):
+        yo.current_count = count
+        count = min(count, yo.finalcount)
+        if yo.finalcount:
+            percentcomplete = int(floor(100.0*count/yo.finalcount))
+        else:
+            percentcomplete = 100
+        blockcount = int(percentcomplete//2)
+        now = time()
+        if now - yo.instant > 0.05:
+            symbol = yo.symbols[yo.symbol_index]
+            yo.symbol_index += 1
+            if yo.symbol_index >= len(yo.symbols):
+                yo.symbol_index = 0
+            yo.f.write('' + symbol)
+            yo.f.flush()
+            yo.instant = now
+        if blockcount <= yo.blockcount:
+            return
+        yo.f.write('')
+        for i in range(yo.blockcount, blockcount):
+            yo.f.write(yo.block)
+        yo.f.write(yo.symbols[yo.symbol_index])
+        yo.f.flush()
+        yo.blockcount = blockcount
+        if percentcomplete == 100:
+            yo.f.write('\n')
+            yo.f.flush()
+    def tick(yo):
+        yo.current_count += 1
+        yo.progress(yo.current_count)
+
+Run()
