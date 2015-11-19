@@ -64,13 +64,14 @@ def self_test():
 
 @Command(
         email=Spec('Who to send job output to.', MULTI, default=notify_list),
+        timeout=Spec('maximum amount of time to run in seconds', OPTION, type=int),
         capture=('Send all output to <email>', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
         job=('job to run', REQUIRED, ),
         )
 @Alias('cronaide')
-def watch(email, capture, heartbeat, passthrough, *job):
+def watch(email, timeout, capture, heartbeat, passthrough, *job):
     "monitor a job, sending results/status to EMAIL"
     print('email addresses:', email)
     ppid = os.getppid()
@@ -78,7 +79,7 @@ def watch(email, capture, heartbeat, passthrough, *job):
     failed = False
     start = time()
     syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
-    result = Execute(job)
+    result = Execute(job, timeout=timeout)
     stop = time()
     elapsed = stop - start
     msg = None
