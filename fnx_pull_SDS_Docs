@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+from __future__ import print_function
+
+from antipathy import Path
+from pandaemonium import PidLockFile, AlreadyLocked
+from scription import *
+import logging
+import os
+
+log_file = Path('/var/log/fnx_pull_SDS_Docs.log')
+
+@Script()
+def main():
+    if log_file.exists():
+        log_file.unlink()
+    logging.basicConfig(filename=log_file, level=logging.INFO)
+    module.logger = logging.getLogger('script')
+
+@Command()
+def fnx_pull_sds_docs():
+    lock = PidLockFile('/var/run/' + script_name + '/pids')
+    try:
+        lock.seal()
+    except AlreadyLocked:
+        print(script_name, 'defer to', lock.read_pid(), verbose=0)
+        raise SystemExit
+    try:
+        config = OrmFile('/etc/openerp/fnx.ini', section='network')
+        cmd = Execute(
+                ['scp',  '-r', '192.168.2.56:/home/reno/Customer*/Spec*/SDS/*', '/home/SDS_Docs/'],
+                password=config.pw,
+                pty=True,
+                )
+        if cmd.returncode or cmd.stderr:
+            if cmd.stderr:
+                logger.error(cmd.stderr)
+                print(cmd.stderr, file=stderr)
+            raise SystemExit(cmd.returncode or 1)
+        if script_verbosity and cmd.stdout:
+            print(cmd.stdout)
+    finally:
+        lock.release()
+
+Main()
+
