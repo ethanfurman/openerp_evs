@@ -16,11 +16,13 @@ import re
         )
 def filesearch(files_only, dirs_only, timestamp, all, path=Path.getcwd(), *regex):
     "Searches for `name` in `path`."
+    print('searching %s for %r ' % (path, regex), ('', '(files only)')[files_only], ('', '(dirs only)')[dirs_only], sep='')
     if not regex:
         show_all = True
     else:
         show_all = False
     for tree, dirs, files in path.walk():
+        print('  ', tree, verbose=2)
         if not all:
             dirs[:] = [d for d in dirs if not d.startswith('.')]
             files[:] = [f for f in files if not f.startswith('.')]
