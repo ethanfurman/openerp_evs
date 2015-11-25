@@ -1,0 +1,67 @@
+#!/usr/bin/env python
+"""
+tree view of file system:
+
+/
+|-- vmlinuz
+|-- vmlinuz.old
+|
+|-- home/
+|   |-- alpha/
+|   |  `-- Desktop/
+|   |
+|   `-- echo/
+|      |-- Desktop/
+|      `-- Downloads/
+|
+`-- var/
+"""
+from __future__ import print_function
+from scandir import scandir, walk
+# from os import walk
+from scription import *
+from time import time
+
+@Command(
+        path=('path to examine',),
+        include_files=('display files', FLAG, 'f'),
+        omit_dirs=('do not recurse into these directories', MULTI, 'o'),
+        time_it=('time execution', FLAG, 't'),
+        )
+def tree(path, include_files, omit_dirs, time_it=False, _prefix=''):
+    path = path.encode('utf8')
+    if omit_dirs and isinstance(omit_dirs[0], unicode):
+        omit_dirs = [d.encode('utf8') for d in omit_dirs]
+    if time_it:
+        start = time()
+    if not _prefix:
+        print(path, '/', sep='', verbose=0)
+    for current, dirs, files in walk(path):
+        if not include_files:
+            files = []
+        if omit_dirs:
+            dirs[:] = [d for d in dirs if d not in omit_dirs]
+        dirs.sort()
+        files.sort()
+        last_dir = last_file = None
+        if files and not dirs:
+            last_file = files.pop()
+        if dirs:
+            last_dir = dirs.pop()
+        for file in files:
+            print(_prefix, '|-- ', file, sep='', verbose=0)
+        if last_file:
+            print(_prefix, '`-- ', last_file, sep='', verbose=0)
+        if (files or last_file) and dirs:
+            print(_prefix, '|', sep='', verbose=0)
+        for dir in dirs:
+            print(_prefix, '|-- ', dir, '/', sep='', verbose=0)
+            tree(current+'/'+dir, include_files, omit_dirs, _prefix=_prefix+'|  ')
+        if last_dir:
+            print(_prefix, '`-- ', last_dir, '/', sep='', verbose=0)
+            tree(current+'/'+last_dir, include_files, omit_dirs, _prefix=_prefix+'   ')
+        dirs[:] = []
+    if time_it:
+        end = time()
+        print('\n', '%5.2f seconds have elapsed' % (end-start), sep='', verbose=0)
+Run()

@@ -305,7 +305,7 @@ def _backup(db, filename):
     _get_pg_port()
     pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db, port=PORT)
     print('   %s' % db, end='')
-    result = Execute(pg_dump)
+    result = Execute(pg_dump, pty=False)
     if result.returncode:
         print(' -- FAILED', file=stderr)
     else:
@@ -324,7 +324,7 @@ def _extract(name, found):
     date = found.filename[:10]
     name = '%s_%s_pg91.sql' % (date, name)
     tgz_cmd = TGZEXTRACT % dict(archive=found, target=name)
-    result = Execute(tgz_cmd)
+    result = Execute(tgz_cmd, pty=False)
     if result.stdout:
         for line in result.stdout.split('\n'):
             print(line)
@@ -372,7 +372,7 @@ def _get_pg_port():
 
 def _list(archive):
     tgz_cmd = TARDISPLAY % dict(target=archive)
-    result = Execute(tgz_cmd)
+    result = Execute(tgz_cmd, pty=False)
     dbs = []
     if result.stdout:
         for line in result.stdout.split('\n'):
@@ -391,7 +391,7 @@ def _psql(cmd):
     print(verbose=2)
     print(cmd, verbose=2)
     with user_ids(*POSTGRES_IDS):
-        result = Execute(cmd)
+        result = Execute(cmd, pty=False)
     if result.returncode:
         if result.returncode != -1:
             print('FAILED: <%d> %s' % (result.returncode, cmd), file=stderr)
@@ -422,7 +422,7 @@ def _tgz(source_path, target_path, id=None):
         target = target_path/'%s_%s_pg91.tar' % (TODAY, id)
     tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(source_path.listdir()))
     print('\narchiving . . .')
-    result = Execute(tgz_cmd, cwd=source_path)
+    result = Execute(tgz_cmd, cwd=source_path, pty=False)
     if result.stdout:
         for line in result.stdout.split('\n'):
             print('   %s' % line)
@@ -433,7 +433,7 @@ def _tgz(source_path, target_path, id=None):
         raise SystemExit(result.returncode)
     print('\ncompressing . . .')
     archive_cmd = COMPRESS % dict(target_name=target)
-    result = Execute(archive_cmd)
+    result = Execute(archive_cmd, pty=False)
     if result.stdout:
         for line in result.stdout.split('\n'):
             print('   %s' % line)
