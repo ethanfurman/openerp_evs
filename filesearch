@@ -17,6 +17,9 @@ import re
 def filesearch(files_only, dirs_only, timestamp, all, path=Path.getcwd(), *regex):
     "Searches for `name` in `path`."
     print('searching %s for %r ' % (path, regex), ('', '(files only)')[files_only], ('', '(dirs only)')[dirs_only], sep='')
+    base = ''
+    if path is None:
+        base = path = Path.getcwd()
     if not regex:
         show_all = True
     else:
@@ -29,21 +32,21 @@ def filesearch(files_only, dirs_only, timestamp, all, path=Path.getcwd(), *regex
         if not files_only:
             for d in dirs:
                 if show_all:
-                    print(tree/d-path, verbose=0)
+                    print(tree/d-base, verbose=0)
                 else:
                     for p in regex:
                         if re.search(p, d):
-                            print(tree/d-path, verbose=0)
+                            print(tree/d-base, verbose=0)
         if not dirs_only:
             for f in files:
                 if show_all:
-                    print(tree/f-path, verbose=0)
+                    print(tree/f-base, verbose=0)
                 else:
                     for p in regex:
                         if re.search(p, f):
                             if timestamp:
-                                print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', tree/f-path, verbose=0)       # mtime
+                                print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', tree/f-base, verbose=0)       # mtime
                             else:
-                                print(tree/f-path, verbose=0)       # mtime
+                                print(tree/f-base, verbose=0)       # mtime
 
 Run()
