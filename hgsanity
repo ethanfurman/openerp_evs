@@ -50,8 +50,12 @@ def hgsanity(*files):
                 # then check mixed tab indentation and trailing whitespace,
                 # and forgotten pdb.set_trace()
                 for i, line in enumerate(data.split('\n'), start=1):
-                    if re.search('\s*#', line):
-                        # ignore comment lines
+                    if re.search('\s+#.*XXX.*do not commit.*', line, re.IGNORECASE):
+                        # catch don't commit comments
+                        notes.append('%s: do not commit this file\n' % (file, ))
+                        break
+                    elif re.search('\s*#', line):
+                        # ignore other comment lines
                         continue
                     if re.search('pdb\s*\.\s*set_trace\s*(\s*)', line):
                         if lastfile not in (None, file):
