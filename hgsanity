@@ -17,70 +17,107 @@ import traceback
 def hgsanity(*files):
     "Check for syntax errors, tab indentation, and trailing whitespace"
     if not files:
+        print('getting hg info')
         hg = extract_hg()
         if not hg.names:
             abort('hgsanity should be called with filenames to check, or as an hg hook')
         files = Execute('hg log -r %s --template {files}' % hg.node).stdout.split()
         repo = Path(hg.pending)
     else:
+        print('no repo')
         repo = None
     notes = []
-    lastfile = None
     for file in files:
         if repo:
             path = repo / file
         else:
             path = file
         if not repo and path.isdir():
+            print('skipping dir', path)
             # no recursing yet
             continue
         if repo and not path.exists():
+            print('skipping removed file', path)
             # file is being removed
             continue
-        if filetype(path) == 'python':
-            with open(path) as f:
-                data = f.read()
-            try:
-                # first check for syntax errors
-                ast.parse(data, path)
-            except Exception as e:
-                lastfile = file
-                notes.extend(traceback.format_exception_only(type(e), e))
-            else:
-                # then check mixed tab indentation and trailing whitespace,
-                # and forgotten pdb.set_trace()
-                for i, line in enumerate(data.split('\n'), start=1):
-                    if re.search('\s+#.*XXX.*do not commit.*', line, re.IGNORECASE):
-                        # catch don't commit comments
-                        notes.append('%s: do not commit this file\n' % (file, ))
-                        break
-                    elif re.search('\s*#', line):
-                        # ignore other comment lines
-                        continue
-                    if re.search('pdb\s*\.\s*set_trace\s*(\s*)', line):
-                        if lastfile not in (None, file):
-                            notes.append('-' * 50 + '\n')
-                            lastfile = file
-                        notes.append('%s: pdb.''set_trace() found in line %d\n' % (file, i))
-                    for ch in line:
-                        if ch not in ' \t':
-                            break
-                        elif ch == '\t':
-                            if lastfile not in (None, file):
-                                notes.append('-' * 50 + '\n')
-                                lastfile = file
-                            notes.append('%s: tab indentation in line %d\n' % (file, i))
-                            break
-                    if line and line[-1] in ' \t':
-                        if lastfile not in (None, file):
-                            notes.append('-' * 50 + '\n')
-                            lastfile = file
-                        notes.append('%s: trailing whitespace in line %d\n' % (file, i))
+        print('getting filetype of', path)
+        checker = filetype(path)
+        if checker:
+            print('  checking', path)
+            checker(path, notes)
     if notes:
-        notes.insert(0, '-' * 50 + '\n')
-        notes.append('-' * 50)
+        notes.insert(0, '-' * 75 + '\n')
+        notes.append('-' * 75)
         print(' ', '  '.join(notes), file=stderr)
         raise SystemExit(1)
+
+def check_python(path, notes):
+    "path is the file to check, notes is a list to update with problems"
+    with open(path) as f:
+        data = f.read()
+    lastfile = None
+    try:
+        # first check for syntax errors
+        ast.parse(data, path)
+    except Exception as e:
+        lastfile = file
+        notes.extend(traceback.format_exception_only(type(e), e))
+    else:
+        # then check mixed tab indentation and trailing whitespace,
+        # and forgotten pdb.set_trace()
+        for i, line in enumerate(data.split('\n'), start=1):
+            if re.search('\s+#.*do not commit.*', line, re.IGNORECASE):
+                # catch don't commit comments
+                notes.append('%s: do not commit this file\n' % (path, ))
+                break
+            elif re.search('\s*#', line):
+                # ignore other comment lines
+                continue
+            if re.search('pdb\s*\.\s*set_trace\s*(\s*)', line):
+                if lastfile not in (None, path):
+                    notes.append('-' * 75 + '\n')
+                    lastfile = path
+                notes.append('%s: pdb.''set_trace() found in line %d\n' % (path, i))
+            for ch in line:
+                if ch not in ' \t':
+                    break
+                elif ch == '\t':
+                    if lastfile not in (None, path):
+                        notes.append('-' * 75 + '\n')
+                        lastfile = path
+                    notes.append('%s: tab indentation in line %d\n' % (path, i))
+                    break
+            if line and line[-1] in ' \t':
+                if lastfile not in (None, path):
+                    notes.append('-' * 75 + '\n')
+                    lastfile = path
+                notes.append('%s: trailing whitespace in line %d\n' % (path, i))
+
+def check_xml(path, notes):
+    "path is the file to check, notes is a list to update with problems"
+    with open(path) as f:
+        data = f.read()
+    lastfile = None
+    for i, line in enumerate(data.split('\n'), start=1):
+        if re.search('\s+<!--.*do not commit.*', line, re.IGNORECASE):
+            # catch don't commit comments
+            notes.append('%s: do not commit this file\n' % (path, ))
+            break
+        for ch in line:
+            if ch not in ' \t':
+                break
+            elif ch == '\t':
+                if lastfile not in (None, path):
+                    notes.append('-' * 75 + '\n')
+                    lastfile = path
+                notes.append('%s: tab indentation in line %d\n' % (path, i))
+                break
+        if line and line[-1] in ' \t':
+            if lastfile not in (None, path):
+                notes.append('-' * 75 + '\n')
+                lastfile = path
+            notes.append('%s: trailing whitespace in line %d\n' % (path, i))
+
 
 def extract_hg():
     ns = NS()
@@ -94,8 +131,11 @@ def extract_hg():
 
 def filetype(path):
     if path.ext == '.py' or path.ext == '' and 'python' in firstline(path):
-        return 'python'
-    return 'unknown'
+        return check_python
+    elif path.ext == '.xml':
+        return check_xml
+    else:
+        return None
 
 def firstline(path):
     with open(path) as f:
