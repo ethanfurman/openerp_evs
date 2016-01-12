@@ -27,9 +27,11 @@ from time import time
         include_files=('display files', FLAG, 'f'),
         omit_dirs=('do not recurse into these directories', MULTI, 'o'),
         time_it=('time execution', FLAG, 't'),
+        all=('show all files/directories (even hidden)', FLAG),
         )
-def tree(path, include_files, omit_dirs, time_it=False, _prefix=''):
-    path = path.encode('utf8')
+def tree(path, include_files, omit_dirs, all, time_it=False, _prefix=''):
+    if not isinstance(path, unicode):
+        path = path.encode('utf8')
     if omit_dirs and isinstance(omit_dirs[0], unicode):
         omit_dirs = [d.encode('utf8') for d in omit_dirs]
     if time_it:
@@ -41,6 +43,9 @@ def tree(path, include_files, omit_dirs, time_it=False, _prefix=''):
             files = []
         if omit_dirs:
             dirs[:] = [d for d in dirs if d not in omit_dirs]
+        if not all:
+            files[:] = [f for f in files if not f.startswith('.')]
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
         dirs.sort()
         files.sort()
         last_dir = last_file = None
@@ -56,10 +61,10 @@ def tree(path, include_files, omit_dirs, time_it=False, _prefix=''):
             print(_prefix, '|', sep='', verbose=0)
         for dir in dirs:
             print(_prefix, '|-- ', dir, '/', sep='', verbose=0)
-            tree(current+'/'+dir, include_files, omit_dirs, _prefix=_prefix+'|  ')
+            tree(current+'/'+dir, include_files, omit_dirs, all, _prefix=_prefix+'|  ')
         if last_dir:
             print(_prefix, '`-- ', last_dir, '/', sep='', verbose=0)
-            tree(current+'/'+last_dir, include_files, omit_dirs, _prefix=_prefix+'   ')
+            tree(current+'/'+last_dir, include_files, omit_dirs, all, _prefix=_prefix+'   ')
         dirs[:] = []
     if time_it:
         end = time()
