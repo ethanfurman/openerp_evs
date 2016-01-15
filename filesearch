@@ -14,7 +14,7 @@ import re
         timestamp=('display timestamp of file', FLAG),
         all=('show all files/directories (even hidden)', FLAG),
         )
-def filesearch(files_only, dirs_only, timestamp, all, path=Path.getcwd(), *regex):
+def filesearch(files_only, dirs_only, timestamp, all, path, *regex):
     "Searches for `name` in `path`."
     print('searching %s for %r ' % (path, regex), ('', '(files only)')[files_only], ('', '(dirs only)')[dirs_only], sep='')
     base = ''
