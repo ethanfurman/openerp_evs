@@ -63,16 +63,20 @@ def field_check(filenum, which):
 @Command(
         filenum=Spec('file abbreviation or number to operate on', ),
         # which=Spec('which record to display', choices=['random', 'last', int], default='random'),
-        which=Spec('which record to display', choices=['random', 'last'], default='random'),
+        which=Spec('which record to display [random, last, <record_id>]', default='random'),
         )
 def record(filenum, which):
+    if filenum.isdigit():
+        filenum = int(filenum)
     table = fisData.fisData(filenum)
     if which == 'last':
-        print(table[-1], verbose=0)
+        record = table[-1]
     elif which == 'random':
-        print(random.choice(table.values()), verbose=0)
-    elif isinstance(which, (int, long)):
-        print(table[which], verbose=0)
+        record = random.choice(table.values())
+    else:
+        record = table[which]
+    print(record.rec)
+    print(record, verbose=0)
 
 
 @Command(
@@ -90,16 +94,24 @@ def schema(filenum, output):
         max_width += 10
         print(table['name'], table['desc'], table['filenum'], verbose=0)
         dotted = True
+        field_num = 0
+        last_field = None
         for i, field in enumerate(table['fields']):
             if not i % 3:
                 dotted = not dotted
             name = '  ' + field[1]
             spec = field[3]
+            current_field = spec.split('(')[0]
+            if current_field != last_field or current_field.lower() == 'i':
+                field_num += 1
+                last_field = current_field
+                display_field_num = '%2d' % field_num
             if dotted:
                 name += '.' * (max_width - len(name))
             else:
                 name += ' ' * (max_width - len(name))
-            print(name, spec, verbose=0)
+            print('%3d  %s' % (i+1, display_field_num), name, spec, verbose=0)
+            display_field_num = '  '
     elif output == 'enum':
         print('class F%d(str, Enum):' % table['filenum'], verbose=0)
         print('    """', verbose=0)
@@ -175,10 +187,10 @@ def schema(filenum, output):
             lines.append((name, spec, comment))
         #calculate widths
         max_name = max([len(n) for n, s, c in lines])
-        max_spec = max([len(s) for n, s, c in lines])
+        max_spec = max([len(s) for n, s, c in lines]) + 2
         for name, spec, comment in lines:
             if name:
-                print('    %-*s = %-*s     # %s' % (max_name, name, max_spec, spec, comment), verbose=0)
+                print('    %-*s = %-*r     # %s' % (max_name, name, max_spec, spec, comment), verbose=0)
             else:
                 print(' ' * (max_name + max_spec + 11), '# %s %s' % (comment, spec), verbose=0)
     else:
