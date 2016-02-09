@@ -6,8 +6,6 @@ from scription import *
 
 search = (
     Path('/usr/lib/pymodules/python2.7'),
-    Path('/usr/local/share/python'),
-    Path('/home/ethan/source'),
     Path('/usr/local/bin')
     )
 
@@ -22,13 +20,26 @@ def workhorse(*path):
                 yield current
 
 @Command(
-    date=('date to check for commits', REQUIRED),
+    date=('date to check for commits [YYYY-MM-DD]', REQUIRED),
     path=('base path to search', OPTION, 'p', Path),
     )
 def log_date(date, *path):
     "displays all log entries for matching date"
     for repo in workhorse(*path):
         history = Execute(('hg', 'log', '--date', date), cwd=repo)
+        if history.stdout:
+            print repo
+            print '=' * 76
+            print history.stdout
+            print
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def parent(*path):
+    "displays parent of active branch"
+    for repo in workhorse(*path):
+        history = Execute(('hg', 'parent', '--template', '{rev}: {desc}'), cwd=repo)
         if history.stdout:
             print repo
             print '=' * 76
@@ -47,7 +58,7 @@ def list(*path):
     path=('base path to search', OPTION, 'p', Path),
     )
 def pull(repo, *path):
-    password = getpass()
+    password = getpass('[mercurial] password: ')
     print
     target = repo
     for repo in workhorse(*path):
@@ -65,7 +76,7 @@ def pull(repo, *path):
     path=('base path to search', OPTION, 'p', Path),
     )
 def push(repo, *path):
-    password = getpass()
+    password = getpass('[mercurial] password: ')
     target = repo
     for repo in workhorse(*path):
         if target and repo.filename != target:
