@@ -64,7 +64,7 @@ def self_test():
 
 @Command(
         email=Spec('Who to send job output to.', MULTI, default=notify_list),
-        timeout=Spec('maximum amount of time to run in seconds', OPTION, type=int),
+        timeout=Spec('maximum amount of time to run in seconds', OPTION, default=3600),
         capture=('Send all output to <email>', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
