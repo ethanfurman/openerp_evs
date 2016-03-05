@@ -14,6 +14,7 @@ import re
         timestamp=('display timestamp of file', FLAG),
         all=('show all files/directories (even hidden)', FLAG),
         )
+@Alias('fs')
 def filesearch(files_only, dirs_only, timestamp, all, path, *regex):
     "Searches for `name` in `path`."
     print('searching %s for %r ' % (path, regex), ('', '(files only)')[files_only], ('', '(dirs only)')[dirs_only], sep='')
@@ -29,6 +30,8 @@ def filesearch(files_only, dirs_only, timestamp, all, path, *regex):
         if not all:
             dirs[:] = [d for d in dirs if not d.startswith('.')]
             files[:] = [f for f in files if not f.startswith('.')]
+        dirs.sort()
+        files.sort()
         if not files_only:
             for d in dirs:
                 if show_all:
