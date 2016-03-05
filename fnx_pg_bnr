@@ -15,7 +15,7 @@ PSQLCMD = '%(psql)s %%(port)s' % settings
 PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
 DAILY_STORAGE = Path(settings.daily)
 MONTHLY_STORAGE = Path(settings.monthly)
-TARARCHIVE = '%(tar)s --create --file %%(target_name)s %%(file_list)s' % settings
+TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % settings
 TARDISPLAY = '%(tar)s --list --file %%(target)s' % settings
 TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % settings
 COMPRESS = '%(gzip)s --force --rsyncable %%(target_name)s' % settings
@@ -417,12 +417,12 @@ def _remove_excess(storage):
 
 def _tgz(source_path, target_path, id=None):
     if id is None:
-        target = target_path/'%s_pg91.tar' % TODAY
+        target = target_path/'%s_pg91.tar.gz' % TODAY
     else:
-        target = target_path/'%s_%s_pg91.tar' % (TODAY, id)
+        target = target_path/'%s_%s_pg91.tar.gz' % (TODAY, id)
     tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(source_path.listdir()))
     print('\narchiving . . .')
-    result = Execute(tgz_cmd, cwd=source_path, pty=False)
+    result = Execute(tgz_cmd, cwd=source_path, pty=False, GZIP="--rsyncable")
     if result.stdout:
         for line in result.stdout.split('\n'):
             print('   %s' % line)
@@ -432,17 +432,6 @@ def _tgz(source_path, target_path, id=None):
             print('        %s' % line, file=stderr)
         raise SystemExit(result.returncode)
     print('\ncompressing . . .')
-    archive_cmd = COMPRESS % dict(target_name=target)
-    result = Execute(archive_cmd, pty=False)
-    if result.stdout:
-        for line in result.stdout.split('\n'):
-            print('   %s' % line)
-    if result.returncode:
-        print('FAILED: %s' % archive_cmd, file=stderr)
-        for line in result.stderr.split('\n'):
-            print('   %s' % line, file=stderr)
-        raise SystemExit(result.returncode)
-    target += '.gz'
     return target
 
 Main()
