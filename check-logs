@@ -1,0 +1,31 @@
+#!/usr/bin/env python2.7
+from __future__ import print_function
+
+from antipathy import Path
+from scription import *
+from re import search
+
+@Command(
+        term=('expression to search for', ),
+        files=('files to search', ),
+        re=('term is a regex', FLAG),
+        )
+def check_logs(term, re, *files):
+    for fn in files:
+        with open(fn) as fh:
+            seen = False
+            for line in fh:
+                if re:
+                    if search(term, line):
+                        if not seen:
+                            print(fn, verbose=0)
+                            seen = True
+                        print('  ', line, end='', verbose=0)
+                elif term in line:
+                    if not seen:
+                        print(fn, verbose=0)
+                        seen = True
+                    print('  ', line, end='', verbose=0)
+
+Main()
+
