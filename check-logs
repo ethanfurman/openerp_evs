@@ -7,25 +7,38 @@ from re import search
 
 @Command(
         term=('expression to search for', ),
-        files=('files to search', ),
+        files=Spec('templates of file names to search', type=Path),
         re=('term is a regex', FLAG),
+        all=('check all matching files', FLAG),
         )
-def check_logs(term, re, *files):
-    for fn in files:
-        with open(fn) as fh:
-            seen = False
-            for line in fh:
-                if re:
-                    if search(term, line):
+def check_logs(term, re, all, *files):
+    if not files:
+        help('no FILES specified')
+    for template in files:
+        original = template.glob()
+        matches = set((template+'*').glob())
+        matches = matches - set(original)
+        matches = original + sorted(list(matches), reverse=True)
+        if matches:
+            if not all:
+                fn = [matches[:2][-1]]
+        else:
+            abort('unable to find any matches for %r' % template)
+        for fn in matches:
+            print('checking', fn)
+            with open(fn) as fh:
+                seen = False
+                for line in fh:
+                    if re:
+                        if search(term, line):
+                            if not seen:
+                                print(fn, verbose=0)
+                                seen = True
+                            print('  ', line, end='', verbose=0)
+                    elif term in line:
                         if not seen:
                             print(fn, verbose=0)
                             seen = True
                         print('  ', line, end='', verbose=0)
-                elif term in line:
-                    if not seen:
-                        print(fn, verbose=0)
-                        seen = True
-                    print('  ', line, end='', verbose=0)
 
 Main()
-
