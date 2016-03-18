@@ -87,11 +87,18 @@ def watch(email, timeout, capture, heartbeat, passthrough, check_stdout, *job):
     if (check_stdout and 'ERROR' in result.stdout) or result.returncode or result.stderr:
         print('error encountered, sending mail')
         failed = True
+        body = [
+                'job:  %s' % ' '.join(job),
+                'return code: %s' % result.returncode,
+                ]
+        if result.stdout:
+            body.append('stdout\n======\n%s' % result.stdout)
+        if result.stderr:
+            body.append('stderr\n======\n%s' % result.stderr)
         msg = message % (
             ','.join(email),
             'job failed:  %s' % job[0].split('/')[-1],
-            '%s\n\nreturn code: %s\n\nstdout\n======\n%s\n\nstderr\n======\n%s' %
-            (' '.join(job), result.returncode, result.stdout, result.stderr),
+            '\n\n'.join(body),
             )
         mail(mail_server, 25, msg)
         syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
