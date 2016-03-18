@@ -61,6 +61,34 @@ def field_check(filenum, which):
 
 
 @Command(
+        table=Spec('FIS table to query', type=int),
+        code=Spec('code to search for', ),
+        field=Spec('specific fields to display [default: all, counting starts with 1]', MULTI, type=int),
+        )
+def query(table, code, field):
+    key = table_keys.get(table)
+    fis_table = fisData(table, keymatch=key)
+    if not field:
+        print(fis_table[code], verbose=0)
+    else:
+        field = [x-1 for x in field]
+        lines = []
+        record = fis_table[code]
+        name = value = 0
+        for i, row in enumerate(record.fieldlist):
+            if i in field:
+                name = max(len(row[3]), name)
+                value = max(len(str(record[row[3]])), value)
+        for i, row in enumerate(record.fieldlist):
+            if i in field:
+                if '$' in row[3]:
+                    lines.append('%5d | %*s | %*s | %s' % (i+1, -name, row[3], -value, record[row[3]], row[1]))
+                else:
+                    lines.append('%5d | %*s | %*s | %s' % (i+1, -name, row[3], value, record[row[3]], row[1]))
+        print('\n'.join(lines), verbose=0)
+
+
+@Command(
         filenum=Spec('file abbreviation or number to operate on', ),
         # which=Spec('which record to display', choices=['random', 'last', int], default='random'),
         which=Spec('which record to display [random, last, <record_id>]', default='random'),
@@ -195,5 +223,9 @@ def schema(filenum, output):
                 print(' ' * (max_name + max_spec + 11), '# %s %s' % (comment, spec), verbose=0)
     else:
         abort('unknown output type: %s' % output)
+
+table_keys = {
+    328: '10%s000010000',
+    }
 
 Main()
