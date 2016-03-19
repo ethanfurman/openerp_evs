@@ -1,0 +1,29 @@
+#!/usr/bin/env python
+from __future__ import print_function
+
+from dbf import Date
+from openerplib import get_connection, get_records, AttrDict
+from scription import *
+
+CONFIG = '/etc/openerp/fnx.ini'
+
+settings = OrmFile(CONFIG, section='openerp')
+
+
+@Command()
+def kick_openerp():
+    """
+    log in to OpenERP to force a log rotation
+    """
+    connect_oe()
+
+OE = AttrDict()
+
+def connect_oe():
+    OE.conn = conn = get_connection(hostname=settings.host, database=settings.db, login=settings.user, password=settings.pw)
+    OE.res_partner = conn.get_model('res.partner')
+    OE.res_users = conn.get_model('res.users')
+    OE.sample_request = conn.get_model('sample.request')
+
+
+Main()
