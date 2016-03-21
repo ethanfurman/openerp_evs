@@ -3,6 +3,7 @@ from __future__ import print_function
 
 from antipathy import Path
 from scription import *
+from codecs import open
 from re import search
 
 @Command(
@@ -10,8 +11,9 @@ from re import search
         files=Spec('templates of file names to search', type=Path),
         re=('term is a regex', FLAG),
         all=('check all matching files', FLAG),
+        encoding=Spec('encoding of file(s)', OPTION, default='utf-8'),
         )
-def check_logs(term, re, all, *files):
+def check_logs(term, re, all, encoding, *files):
     if not files:
         help('no FILES specified')
     for template in files:
@@ -21,12 +23,12 @@ def check_logs(term, re, all, *files):
         matches = original + sorted(list(matches), reverse=True)
         if matches:
             if not all:
-                fn = [matches[:2][-1]]
+                matches = [matches[:2][-1]]
         else:
             abort('unable to find any matches for %r' % template)
         for fn in matches:
             print('checking', fn)
-            with open(fn) as fh:
+            with open(fn, encoding=encoding) as fh:
                 seen = False
                 for line in fh:
                     if re:
