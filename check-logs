@@ -11,7 +11,7 @@ from re import search
         files=Spec('templates of file names to search', type=Path),
         re=('term is a regex', FLAG),
         all=('check all matching files', FLAG),
-        encoding=Spec('encoding of file(s)', OPTION, default='utf-8'),
+        encoding=Spec('encoding of file(s)', OPTION, default='latin1'),
         )
 def check_logs(term, re, all, encoding, *files):
     if not files:
