@@ -17,33 +17,33 @@ tree view of file system:
 `-- var/
 """
 from __future__ import print_function
-from scandir import scandir, walk
-# from os import walk
+from antipathy import Path
 from scription import *
 from time import time
 
 @Command(
-        path=('path to examine',),
-        include_files=('display files', FLAG, 'f'),
+        path=Spec('path to examine', REQUIRED, None, default=Path.getcwd()),
+        include_files=('show files', FLAG, 'f'),
         omit_dirs=('do not recurse into these directories', MULTI, 'o'),
         time_it=('time execution', FLAG, 't'),
-        all=('show all files/directories (even hidden)', FLAG),
+        hidden=('show hidden files/directories', FLAG),
+        links=('follow links', FLAG, 'l')
         )
-def tree(path, include_files, omit_dirs, all, time_it=False, _prefix=''):
-    if not isinstance(path, unicode):
-        path = path.encode('utf8')
+def tree(path, include_files, omit_dirs, hidden, links, time_it=False, _prefix=''):
     if omit_dirs and isinstance(omit_dirs[0], unicode):
         omit_dirs = [d.encode('utf8') for d in omit_dirs]
     if time_it:
         start = time()
     if not _prefix:
         print(path, '/', sep='', verbose=0)
-    for current, dirs, files in walk(path):
+    for current, dirs, files in path.walk():
         if not include_files:
             files = []
         if omit_dirs:
             dirs[:] = [d for d in dirs if d not in omit_dirs]
-        if not all:
+        if not links:
+            dirs[:] = [d for d in dirs if not d.islink()]
+        if not hidden:
             files[:] = [f for f in files if not f.startswith('.')]
             dirs[:] = [d for d in dirs if not d.startswith('.')]
         dirs.sort()
@@ -61,10 +61,10 @@ def tree(path, include_files, omit_dirs, all, time_it=False, _prefix=''):
             print(_prefix, '|', sep='', verbose=0)
         for dir in dirs:
             print(_prefix, '|-- ', dir, '/', sep='', verbose=0)
-            tree(current+'/'+dir, include_files, omit_dirs, all, _prefix=_prefix+'|  ')
+            tree(current/dir, include_files, omit_dirs, hidden, links, _prefix=_prefix+'|  ')
         if last_dir:
             print(_prefix, '`-- ', last_dir, '/', sep='', verbose=0)
-            tree(current+'/'+last_dir, include_files, omit_dirs, all, _prefix=_prefix+'   ')
+            tree(current/last_dir, include_files, omit_dirs, hidden, links, _prefix=_prefix+'   ')
         dirs[:] = []
     if time_it:
         end = time()
