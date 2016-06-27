@@ -27,6 +27,11 @@ def log_date(date, *path):
     "displays all log entries for matching date"
     for repo in workhorse(*path):
         history = Execute(('hg', 'log', '--date', date), cwd=repo)
+        if history.stderr:
+            print repo
+            print '=' * 76
+            print history.stderr
+            raise SystemExit(1)
         if history.stdout:
             print repo
             print '=' * 76
@@ -40,6 +45,11 @@ def parent(*path):
     "displays parent of active branch"
     for repo in workhorse(*path):
         history = Execute(('hg', 'parent', '--template', '{rev}: {desc}'), cwd=repo)
+        if history.stderr:
+            print repo
+            print '=' * 76
+            print history.stderr
+            raise SystemExit(1)
         if history.stdout:
             print repo
             print '=' * 76
@@ -67,6 +77,11 @@ def pull(repo, *path):
         print repo
         print '=' * 76
         history = Execute(('hg', 'pull'), cwd=repo, password=password, pty=True)
+        if history.stderr:
+            print repo
+            print '=' * 76
+            print history.stderr
+            raise SystemExit(1)
         if not history.stdout.strip().endswith('no changes found') or history.returncode:
             print history.stdout
         print
@@ -84,6 +99,11 @@ def push(repo, *path):
         print repo
         print '=' * 76
         history = Execute(('hg', 'push'), cwd=repo, password=password, pty=True)
+        if history.stderr:
+            print repo
+            print '=' * 76
+            print history.stderr
+            raise SystemExit(1)
         if not history.stdout.strip().endswith('no changes found') or history.returncode not in (0, 1):
             print history.stdout
         print
@@ -98,6 +118,11 @@ def status(*path):
         history = Execute(('hg', 'status'), cwd=repo)
         parent = Execute(('hg', 'parent'), cwd=repo)
         latest = Execute(('hg', 'log', '-l1'), cwd=repo)
+        if history.stderr:
+            print repo
+            print '=' * 76
+            print history.stderr
+            raise SystemExit(1)
         if history.stdout or history.returncode:
             print history.stdout
         if parent.stdout != latest.stdout:
@@ -129,6 +154,11 @@ def update(repo, *path):
             history = Execute(('hg', 'update', desired), cwd=repo)
         else:
             history = Execute(('hg', 'update', ), cwd=repo)
+        if history.stderr:
+            print repo
+            print '=' * 76
+            print history.stderr
+            raise SystemExit(1)
         stdout = history.stdout.strip().split('\n')
         last_line = ''
         if stdout:
