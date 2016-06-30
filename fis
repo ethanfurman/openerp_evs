@@ -111,6 +111,35 @@ def record(filenum, which):
 
 
 @Command(
+        filenum=Spec('file abbreviation or number to operate on', ),
+        subset=Spec('subset template to match many records to', ),
+        code=Spec('code to match with template', type=lambda s: tuple(s.split(','))),
+        fields=Spec('specific fields to display [default: all, counting starts with 0]', MULTI, type=int),
+        )
+def records(filenum, subset, code, fields):
+    fis_table = fisData.fisData(filenum, subset=subset)
+    records = [v for k, v in fis_table.get_subset(code)]
+    for record in records:
+        if not fields:
+            print(record, verbose=0)
+        else:
+            lines = []
+            name = value = 0
+            for i, row in enumerate(record.fieldlist):
+                if i in fields:
+                    name = max(len(row[3]), name)
+                    value = max(len(str(record[row[3]])), value)
+            for i, row in enumerate(record.fieldlist):
+                if i in fields:
+                    if '$' in row[3]:
+                        lines.append('%5d | %*s | %*s | %s' % (i, -name, row[3], -value, record[row[3]], row[1]))
+                    else:
+                        lines.append('%5d | %*s | %*s | %s' % (i, -name, row[3], value, record[row[3]], row[1]))
+            print('\n'.join(lines), verbose=0)
+        print()
+
+
+@Command(
         filenum=Spec('file abbreviation or number to display', ),
         output=Spec('output type', choices=['dump','enum'], default='dump'),
         )
