@@ -21,6 +21,9 @@ execfile(USER_PW_DB)
         which=Spec('which field to display', default='all', type=unicode.upper),
         )
 def field_check(filenum, which):
+    """
+    Checks numeric fields for bad values.
+    """
     if filenum != 'all':
         if filenum.isdigit():
             filenum = int(filenum)
@@ -34,11 +37,12 @@ def field_check(filenum, which):
         except fisData.TableError, exc:
             print('<%s>' % exc.__doc__, verbose=0)
             continue
+        print(table.datamap)
         if which != 'all':
             fields = [which]
         else:
             fields = [f for f in table.datamap if '$' not in f]
-        print('(%d records, %d fields)' % (len(table), len(fields)), end='  ', verbose=0)
+        print('(%d records, %d numeric fields)' % (len(table), len(fields)), end='  ', verbose=0)
         ints = floats = 0
         bad_values = defaultdict(lambda: defaultdict(int))
         for record in table.values():
@@ -63,15 +67,14 @@ def field_check(filenum, which):
 @Command(
         table=Spec('FIS table to query', type=int),
         code=Spec('code to search for', ),
-        field=Spec('specific fields to display [default: all, counting starts with 1]', MULTI, type=int),
+        field=Spec('specific fields to display [default: all, counting starts with 0]', MULTI, type=int),
         )
 def query(table, code, field):
     key = table_keys.get(table)
-    fis_table = fisData(table, keymatch=key)
+    fis_table = fisData.fisData(table, keymatch=key)
     if not field:
         print(fis_table[code], verbose=0)
     else:
-        field = [x-1 for x in field]
         lines = []
         record = fis_table[code]
         name = value = 0
@@ -82,9 +85,9 @@ def query(table, code, field):
         for i, row in enumerate(record.fieldlist):
             if i in field:
                 if '$' in row[3]:
-                    lines.append('%5d | %*s | %*s | %s' % (i+1, -name, row[3], -value, record[row[3]], row[1]))
+                    lines.append('%5d | %*s | %*s | %s' % (i, -name, row[3], -value, record[row[3]], row[1]))
                 else:
-                    lines.append('%5d | %*s | %*s | %s' % (i+1, -name, row[3], value, record[row[3]], row[1]))
+                    lines.append('%5d | %*s | %*s | %s' % (i, -name, row[3], value, record[row[3]], row[1]))
         print('\n'.join(lines), verbose=0)
 
 
@@ -98,7 +101,7 @@ def record(filenum, which):
         filenum = int(filenum)
     table = fisData.fisData(filenum)
     if which == 'last':
-        record = table[-1]
+        record = table.values()[-1]
     elif which == 'random':
         record = random.choice(table.values())
     else:
