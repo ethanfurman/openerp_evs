@@ -2,9 +2,11 @@
 from __future__ import print_function
 
 from collections import defaultdict
+from itertools import cycle
 from scription import *
 from VSS.BBxXlate import fisData
 from antipathy import Path
+import dbf
 import random
 import re
 
@@ -115,28 +117,73 @@ def record(filenum, which):
         subset=Spec('subset template to match many records to', ),
         code=Spec('code to match with template', type=lambda s: tuple(s.split(','))),
         fields=Spec('specific fields to display [default: all, counting starts with 0]', MULTI, type=int),
+        dbf_name=Spec('dbf to create with data', OPTION),
         )
-def records(filenum, subset, code, fields):
+def records(filenum, subset, code, fields, dbf_name):
     fis_table = fisData.fisData(filenum, subset=subset)
     records = [v for k, v in fis_table.get_subset(code)]
-    for record in records:
-        if not fields:
-            print(record, verbose=0)
-        else:
-            lines = []
-            name = value = 0
-            for i, row in enumerate(record.fieldlist):
-                if i in fields:
-                    name = max(len(row[3]), name)
-                    value = max(len(str(record[row[3]])), value)
-            for i, row in enumerate(record.fieldlist):
-                if i in fields:
+    if records:
+        # get field defs now, may be needed for dbf creation
+        record = records[0]
+        print('widths:', record._widths)
+        max_data_width = record._width
+        max_spec_width = 0
+        field_widths = []
+        dbf_types = []
+        dbf_names = []
+        fis_fields = record.fieldlist
+        for i, row in enumerate(fis_fields):
+            if not fields or i in fields:
+                name, spec = row[1:4:2]
+                max_spec_width = max(max_spec_width, len(spec.strip()))
+                width = fis_table.field_widths[i]
+                field_widths.append(width)
+                field_name = convert_name(name, 10)
+                if field_name in dbf_names:
+                    print('duplicate name:', field_name)
+                    prior = dbf_names.index(field_name)
+                    print('  found at:', prior)
+                    alt_name = convert_name(name, 9)
+                    dbf_names[prior] = alt_name
+                    dbf_types[prior] = dbf_types[prior].replace(field_name, alt_name)
+                    print('  reset to:', dbf_names[prior])
+                    print('  and:     ', dbf_types[prior])
+                    field_name = alt_name + '2'
+                dbf_names.append(field_name)
+                name = convert_name(name)
+                if '$' in spec:
+                    dbf_types.append('%s C(%d)' % (field_name, width))
+                else:
+                    dbf_types.append('%s N(17,5)' % field_name)
+        if dbf_name:
+            print('dbf fields:\n  ', '\n   '.join(dbf_types))
+            table = dbf.Table(dbf_name, dbf_types).open()
+    try:
+        for record in records:
+            field_data = []
+            for i, row in enumerate(fis_fields):
+                lines = []
+                if not fields or i in fields:
+                    comment, spec = row[1:4:2]
+                    data = record[row[3]]
+                    field_data.append(data)
                     if '$' in row[3]:
-                        lines.append('%5d | %*s | %*s | %s' % (i, -name, row[3], -value, record[row[3]], row[1]))
+                        lines.append('%5d | %*s | %*s | %s' % (i, -max_spec_width, spec, -max_data_width, data, comment))
                     else:
-                        lines.append('%5d | %*s | %*s | %s' % (i, -name, row[3], value, record[row[3]], row[1]))
-            print('\n'.join(lines), verbose=0)
-        print()
+                        lines.append('%5d | %*s | %*s | %s' % (i, -max_spec_width, spec, max_data_width, data, comment))
+                if not dbf_name:
+                    print('\n'.join(lines), verbose=0)
+            if dbf_name:
+                print('field data:', field_data)
+                table.append(tuple(field_data))
+            if not dbf_name:
+                print()
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+    finally:
+        if dbf_name:
+            table.close()
 
 
 @Command(
@@ -181,69 +228,7 @@ def schema(filenum, output):
         for field in table['fields']:
             name, spec = field[1:4:2]
             comment = name
-            name = name.lower()
-            if '(' in name:
-                name = name.split('(')[0]
-            if name.endswith(' number'):
-                name = name[:-6] + 'id'
-            pieces = name.split()
-            if pieces and pieces[0].isdigit() and pieces[1:2] == ['spaces']:
-                pieces = pieces[2:]
-            for i, p in enumerate(pieces):
-                if len(p) == 3 and '/' in p:
-                    pieces[i] = p[0] + p[2]
-            name = ' '.join(pieces)
-            if name.startswith(('key type', 'key group')):
-                name = 'key type'
-            member = []
-            for i, piece in enumerate(re.sub('\W+', ' ', name).split()):
-                if i == 0 and piece[0].isdigit():
-                    piece = {
-                            '0':    'zero',
-                            '1':    'one',
-                            '2':    'two',
-                            '3':    'three',
-                            '4':    'four',
-                            '5':    'five',
-                            '6':    'six',
-                            '7':    'seven',
-                            '8':    'eight',
-                            '9':    'nine',
-                            '10':   'ten',
-                            '1st':  'first',
-                            '2nd':  'second',
-                            '3rd':  'third',
-                            '4th':  'fourth',
-                            '5th':  'fifth',
-                            '6th':  'sixth',
-                            '7th':  'seventh',
-                            '8th':  'eighth',
-                            '9th':  'ninth',
-                            '10th': 'tenth',
-                            }.get(piece, piece)
-                else:
-                    piece = {
-                            'authority':  'auth',
-                            'center':     'ctr',
-                            'centering':  'ctr',
-                            'code':       'id',
-                            'codes':      'ids',
-                            'department': 'dept',
-                            'description':'desc',
-                            'ingredient': 'ingr',
-                            'length':     'len',
-                            'numbers':    'nos',
-                            'number':     'no',
-                            'product':    'prod',
-                            'production': 'prod',
-                            'position':   'pos',
-                            'quantity':   'qty',
-                            'revision':   'rev',
-                            'sequence':   'seq',
-                            'string':     'str',
-                            }.get(piece, piece)
-                member.append(piece)
-            name = '_'.join(member)
+            name = convert_name(name)
             lines.append((name, spec, comment))
         #calculate widths
         max_name = max([len(n) for n, s, c in lines])
@@ -258,6 +243,114 @@ def schema(filenum, output):
 
 table_keys = {
     328: '10%s000010000',
+    }
+
+def convert_name(name, max_len=50):
+    name = name.lower()
+    if '(' in name:
+        name = name.split('(')[0]
+    name = name.replace('.', '')
+    for text in (' code', ' codes'):
+        if name.endswith(text):
+            name = name[:-len(text)+1] + 'id' + ('', 's')[text[-1] == 's']
+            break
+    pieces = name.split()
+    if pieces and pieces[0].isdigit() and pieces[1:2] == ['spaces']:
+        pieces = pieces[2:]
+    for i, p in enumerate(pieces):
+        if len(p) == 3 and '/' in p:
+            pieces[i] = p[0] + p[2]
+    name = ' '.join(pieces)
+    if name.startswith(('key type', 'key group')):
+        name = 'key type'
+    member = []
+    # name substitution
+    for i, piece in enumerate(re.sub('\W+', ' ', name).split()):
+        if i == 0 and piece[0].isdigit():
+            piece = numbers.get(piece, piece)
+        else:
+            piece = common.get(piece, piece)
+        member.append(piece)
+    # shrink further as necessary
+    def no_under(names):
+        return ''.join(names)
+    def pop_under(names):
+        names.pop()
+        return '_'.join(names)
+    name = '_'.join(member)
+    shrinker = cycle([no_under, pop_under])
+    if len(name) > max_len:
+        # first try uncommon abbr
+        for i, m in enumerate(member):
+            member[i] = uncommon.get(m, m)
+        name = '_'.join(member)
+    while len(name) > max_len:
+        func = next(shrinker)
+        name = func(member)
+    return name
+
+numbers = {
+    '0':    'zero',
+    '1':    'one',
+    '2':    'two',
+    '3':    'three',
+    '4':    'four',
+    '5':    'five',
+    '6':    'six',
+    '7':    'seven',
+    '8':    'eight',
+    '9':    'nine',
+    '10':   'ten',
+    '1st':  'first',
+    '2nd':  'second',
+    '3rd':  'third',
+    '4th':  'fourth',
+    '5th':  'fifth',
+    '6th':  'sixth',
+    '7th':  'seventh',
+    '8th':  'eighth',
+    '9th':  'ninth',
+    '10th': 'tenth',
+    }
+
+common = {
+    'account':      'acct',
+    'adjustment':   'adj',
+    'allowance':    'allwnc',
+    'amount':       'amt',
+    'authority':    'auth',
+    'center':       'ctr',
+    'centering':    'ctr',
+    'check':        'chk',
+    'credit':       'cr',
+    'credits':      'crs',
+    'customer':     'cust',
+    'debit':        'dr',
+    'debits':       'drs',
+    'department':   'dept',
+    'description':  'desc',
+    'discount':     'disc',
+    'ingredient':   'ingr',
+    'length':       'len',
+    'invoice':      'inv',
+    'number':       'no',
+    'numbers':      'nos',
+    'payment':      'pymt',
+    'product':      'prod',
+    'production':   'prod',
+    'position':     'pos',
+    'quantity':     'qty',
+    'revision':     'rev',
+    'sequence':     'seq',
+    'string':       'str',
+    'transaction':  'trans',
+    }
+
+uncommon = {
+    'adjust':       'adj',
+    'company':      'comp',
+    'other':        'oth',
+    'total':        'ttl',
     }
 
 Main()
