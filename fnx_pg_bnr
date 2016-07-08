@@ -13,6 +13,7 @@ import time
 settings = IniFile('/etc/openerp/fnx.ini', section='postgres')
 PSQLCMD = '%(psql)s %%(port)s' % settings
 PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
+PGDUMPALLCMD = '%(pg_dumpall)s %%(port)s --file=%%(filename)s --globals-only' % settings
 DAILY_STORAGE = Path(settings.daily)
 MONTHLY_STORAGE = Path(settings.monthly)
 TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % settings
@@ -61,9 +62,14 @@ def main():
         dst=('where to put backup', OPTION, Path, None),
         )
 def backup(dbs, id, dst):
+    """
+    backs up all postgres databases, roles, etc., or single databases
+    """
     print('backup::0', verbose=2)
     _get_pg_port()
     print('backup::1', verbose=2)
+    everything = not bool(dbs)
+    print('backing up everything?', everything)
     with user_ids(*POSTGRES_IDS):
         print('backup::', verbose=2)
         TEMP.chdir()
@@ -86,6 +92,25 @@ def backup(dbs, id, dst):
             file = template % db
             if not _backup(db, file) and not db.startswith('template'):
                 failures = True
+        if everything:
+            # if everything, get globals options...
+            pg_dumpall = PGDUMPALLCMD % dict(filename=TEMP/'_roles_etc.sql', port=PORT)
+            print('   roles, etc.', end='')
+            result = Execute(pg_dumpall, pty=False)
+            if result.returncode:
+                print(' -- FAILED', file=stderr)
+            else:
+                print()
+            if result.stdout:
+                for line in result.stdout.split('\n'):
+                    print('   %s' % line)
+            if result.returncode:
+                print('       %s' % pg_dump, file=stderr)
+                for line in result.stderr.split('\n'):
+                    print('      %s' % line, file=stderr)
+                print()
+                failures = True
+
     # wait an extra few seconds to give tar file time to show up
     # (keep getting sporadic errors at Falcon)
     time.sleep(5)
