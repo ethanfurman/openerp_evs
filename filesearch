@@ -46,7 +46,7 @@ def filesearch(files_only, dirs_only, timestamp, all, path, execute, *regex):
                 if show_all:
                     target = tree/d-base
                     if execute:
-                        print('executing', execute % target)
+                        print('executing', execute % target, verbose=2)
                         history = Execute(execute % target)
                         for stream in ('stdout', 'stderr'):
                             stream = getattr(history, stream)
@@ -61,7 +61,7 @@ def filesearch(files_only, dirs_only, timestamp, all, path, execute, *regex):
                         if re.search(p, d):
                             target = tree/d-base
                             if execute:
-                                print('executing', execute % target)
+                                print('executing', execute % target, verbose=2)
                                 history = Execute(execute % target)
                                 for stream in ('stdout', 'stderr'):
                                     stream = getattr(history, stream)
@@ -76,7 +76,7 @@ def filesearch(files_only, dirs_only, timestamp, all, path, execute, *regex):
                 if show_all:
                     target = tree/f-base
                     if execute:
-                        print('executing', execute % target)
+                        print('executing', execute % target, verbose=2)
                         history = Execute(execute % target)
                         for stream in ('stdout', 'stderr'):
                             stream = getattr(history, stream)
@@ -91,7 +91,7 @@ def filesearch(files_only, dirs_only, timestamp, all, path, execute, *regex):
                         if re.search(p, f):
                             target = tree/f-base
                             if execute:
-                                print('executing', execute % target)
+                                print('executing', execute % target, verbose=2)
                                 history = Execute(execute % target)
                                 for stream in ('stdout', 'stderr'):
                                     stream = getattr(history, stream)
