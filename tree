@@ -27,15 +27,18 @@ from time import time
         omit_dirs=('do not recurse into these directories', MULTI, 'o'),
         time_it=('time execution', FLAG, 't'),
         hidden=('show hidden files/directories', FLAG),
-        links=('follow links', FLAG, 'l')
+        links=('follow links', FLAG, 'l'),
+        depth=Spec('limit recursion to x levels', OPTION, type=int, default=None),
         )
-def tree(path, include_files, omit_dirs, hidden, links, time_it=False, _prefix=''):
+def tree(path, include_files, omit_dirs, hidden, links, depth, time_it=False, _prefix=''):
     if omit_dirs and isinstance(omit_dirs[0], unicode):
         omit_dirs = [d.encode('utf8') for d in omit_dirs]
     if time_it:
         start = time()
     if not _prefix:
         print(path, '/', sep='', verbose=0)
+    if depth is not None:
+        depth -= 1
     for current, dirs, files in path.walk():
         if not include_files:
             files = []
@@ -61,10 +64,12 @@ def tree(path, include_files, omit_dirs, hidden, links, time_it=False, _prefix='
             print(_prefix, '|', sep='', verbose=0)
         for dir in dirs:
             print(_prefix, '|-- ', dir, '/', sep='', verbose=0)
-            tree(current/dir, include_files, omit_dirs, hidden, links, _prefix=_prefix+'|  ')
+            if depth is None or depth >= 0:
+                tree(current/dir, include_files, omit_dirs, hidden, links, depth=depth, _prefix=_prefix+'|  ')
         if last_dir:
             print(_prefix, '`-- ', last_dir, '/', sep='', verbose=0)
-            tree(current/last_dir, include_files, omit_dirs, hidden, links, _prefix=_prefix+'   ')
+            if depth is None or depth >= 0:
+                tree(current/last_dir, include_files, omit_dirs, hidden, links, depth=depth, _prefix=_prefix+'   ')
         dirs[:] = []
     if time_it:
         end = time()
