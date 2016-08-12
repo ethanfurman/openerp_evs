@@ -1,9 +1,8 @@
 #!/usr/bin/python
 from __future__ import print_function
-import os
 from datetime import datetime
 from antipathy import Path
-from scription import *
+from scription import Command, Alias, Execute, Run, abort, print, FLAG, OPTION
 import re
 
 @Command(
@@ -30,79 +29,53 @@ def filesearch(files_only, dirs_only, timestamp, all, path, execute, *regex):
     if path is None:
         base = path = Path.getcwd()
     if not regex:
-        show_all = True
-    else:
-        show_all = False
+        regex = ('.*')
     for tree, dirs, files in path.walk():
         if not execute:
             print('  ', tree, verbose=2)
-        if not all:
-            dirs[:] = [d for d in dirs if not d.startswith('.')]
-            files[:] = [f for f in files if not f.startswith('.')]
         dirs.sort()
         files.sort()
         if not files_only:
             for d in dirs:
-                if show_all:
-                    target = tree/d-base
-                    if execute:
-                        print('executing', execute % target, verbose=2)
-                        history = Execute(execute % target)
-                        for stream in ('stdout', 'stderr'):
-                            stream = getattr(history, stream)
-                            if stream:
-                                print(stream, end='')
-                        if history.returncode:
-                            abort('%r returned code %r' % (execute % target, history.returncode))
-                    else:
-                        print(target, verbose=0)
-                else:
-                    for p in regex:
-                        if re.search(p, d):
-                            target = tree/d-base
-                            if execute:
-                                print('executing', execute % target, verbose=2)
-                                history = Execute(execute % target)
-                                for stream in ('stdout', 'stderr'):
-                                    stream = getattr(history, stream)
-                                    if stream:
-                                        print(stream, end='')
-                                if history.returncode:
-                                    abort('%r returned code %r' % (execute % target, history.returncode))
+                for p in regex:
+                    if not (all or p.startswith('^\.')):
+                        continue
+                    if re.search(p, d):
+                        target = tree/d-base
+                        if execute:
+                            print('executing', execute % target, verbose=2)
+                            history = Execute(execute % target)
+                            for stream in ('stdout', 'stderr'):
+                                stream = getattr(history, stream)
+                                if stream:
+                                    print(stream, end='')
+                            if history.returncode:
+                                abort('%r returned code %r' % (execute % target, history.returncode))
+                        else:
+                            if timestamp:
+                                print(datetime.fromtimestamp((tree/d).stat()[8]), '   ', target, verbose=0)       # mtime
                             else:
-                                print(tree/d-base, verbose=0)
+                                print(target, verbose=0)       # mtime
         if not dirs_only:
             for f in files:
-                if show_all:
-                    target = tree/f-base
-                    if execute:
-                        print('executing', execute % target, verbose=2)
-                        history = Execute(execute % target)
-                        for stream in ('stdout', 'stderr'):
-                            stream = getattr(history, stream)
-                            if stream:
-                                print(stream, end='')
-                        if history.returncode:
-                            abort('%r returned code %r' % (execute % target, history.returncode))
-                    else:
-                        print(tree/f-base, verbose=0)
-                else:
-                    for p in regex:
-                        if re.search(p, f):
-                            target = tree/f-base
-                            if execute:
-                                print('executing', execute % target, verbose=2)
-                                history = Execute(execute % target)
-                                for stream in ('stdout', 'stderr'):
-                                    stream = getattr(history, stream)
-                                    if stream:
-                                        print(stream, end='')
-                                if history.returncode:
-                                    abort('%r returned code %r' % (execute % target, history.returncode))
+                for p in regex:
+                    if not (all or p.startswith('^\.')):
+                        continue
+                    if re.search(p, f):
+                        target = tree/f-base
+                        if execute:
+                            print('executing', execute % target, verbose=2)
+                            history = Execute(execute % target)
+                            for stream in ('stdout', 'stderr'):
+                                stream = getattr(history, stream)
+                                if stream:
+                                    print(stream, end='')
+                            if history.returncode:
+                                abort('%r returned code %r' % (execute % target, history.returncode))
+                        else:
+                            if timestamp:
+                                print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', target, verbose=0)       # mtime
                             else:
-                                if timestamp:
-                                    print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', tree/f-base, verbose=0)       # mtime
-                                else:
-                                    print(tree/f-base, verbose=0)       # mtime
+                                print(target, verbose=0)       # mtime
 
 Run()
