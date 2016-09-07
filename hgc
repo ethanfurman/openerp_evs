@@ -2,7 +2,7 @@
 
 from getpass import getpass
 from antipathy import Path
-from scription import *
+from scription import Command, Execute, Main, OPTION, REQUIRED
 
 search = (
     Path('/usr/lib/pymodules/python2.7'),
@@ -10,6 +10,9 @@ search = (
     )
 
 def workhorse(*path):
+    """
+    yields paths with are mercurial repos
+    """
     if not path:
         path = search
     for p in path:
@@ -32,7 +35,6 @@ def incoming(*path):
             print repo
             print '=' * 76
             print history.stderr
-            raise SystemExit(1)
         if not history.stdout.strip().endswith('no changes found'):
             print repo
             print '=' * 76
@@ -51,7 +53,6 @@ def log_date(date, *path):
             print repo
             print '=' * 76
             print history.stderr
-            raise SystemExit(1)
         if history.stdout:
             print repo
             print '=' * 76
@@ -71,7 +72,6 @@ def outgoing(*path):
             print repo
             print '=' * 76
             print history.stderr
-            raise SystemExit(1)
         if not history.stdout.strip().endswith('no changes found'):
             print repo
             print '=' * 76
@@ -89,7 +89,6 @@ def parent(*path):
             print repo
             print '=' * 76
             print history.stderr
-            raise SystemExit(1)
         if history.stdout:
             print repo
             print '=' * 76
@@ -100,14 +99,22 @@ def parent(*path):
     path=('base path to search', OPTION, 'p', Path),
     )
 def list(*path):
+    """
+    displays all repos
+    """
     for repo in workhorse(*path):
         print repo
+
 
 @Command(
     repo=('repository to pull [default: all]', OPTION),
     path=('base path to search', OPTION, 'p', Path),
     )
 def pull(repo, *path):
+    '''
+    retrieve remote change sets
+    '''
+
     password = getpass('[mercurial] password: ')
     print
     target = repo
@@ -121,7 +128,6 @@ def pull(repo, *path):
             print repo
             print '=' * 76
             print history.stderr
-            raise SystemExit(1)
         if not history.stdout.strip().endswith('no changes found') or history.returncode:
             print history.stdout
         print
@@ -131,6 +137,9 @@ def pull(repo, *path):
     path=('base path to search', OPTION, 'p', Path),
     )
 def push(repo, *path):
+    '''
+    send local changesets to remote repo
+    '''
     password = getpass('[mercurial] password: ')
     target = repo
     for repo in workhorse(*path):
@@ -143,7 +152,6 @@ def push(repo, *path):
             print repo
             print '=' * 76
             print history.stderr
-            raise SystemExit(1)
         if not history.stdout.strip().endswith('no changes found') or history.returncode not in (0, 1):
             print history.stdout
         print
@@ -152,6 +160,9 @@ def push(repo, *path):
     path=('base path to search', OPTION, 'p', Path),
     )
 def status(*path):
+    '''
+    display status for each repo
+    '''
     for repo in workhorse(*path):
         print repo
         print '=' * 76
@@ -162,7 +173,6 @@ def status(*path):
             print repo
             print '=' * 76
             print history.stderr
-            raise SystemExit(1)
         if history.stdout or history.returncode:
             print history.stdout
         if parent.stdout != latest.stdout:
@@ -176,6 +186,11 @@ def status(*path):
     path=('base path to search', OPTION, 'p', Path),
     )
 def update(repo, *path):
+    '''
+    update active files to latest version
+
+    uses 'running' tag if available, otherwise 'tip'
+    '''
     target = repo
     for repo in workhorse(*path):
         if target and repo.filename != target:
@@ -198,7 +213,6 @@ def update(repo, *path):
             print repo
             print '=' * 76
             print history.stderr
-            raise SystemExit(1)
         stdout = history.stdout.strip().split('\n')
         last_line = ''
         if stdout:
@@ -212,5 +226,4 @@ def update(repo, *path):
             print 'latest version ' + latest.stdout[15:]
             print 'running version ' + parent.stdout[16:]
         print
-
 Main()
