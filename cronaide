@@ -4,7 +4,7 @@ from __future__ import print_function
 from antipathy import Path
 from itertools import groupby
 from textwrap import dedent, wrap
-from scription import *
+from scription import Command, Alias, REQUIRED, OPTION, MULTI, FLAG, print, mail, Spec, Run, Execute, stderr
 from socket import getfqdn
 from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON
 from time import time
@@ -131,6 +131,7 @@ def watch(email, timeout, capture, heartbeat, passthrough, check_stdout, *job):
         if result.stderr:
             print(result.stderr, file=sys.stderr)
         sys.exit(result.returncode)
+    closelog()
     sys.exit(0)
 
 
@@ -164,11 +165,19 @@ def check_cron():
             syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
     if msg is None:
         syslog(LOG_INFO, '[from %s] succeeded' % ppid)
+    closelog()
 
 
 @Command()
 def check_syslog():
-    "search crontab and syslog and verify that crontab entries of cronaide are running properly"
+    """
+    search crontab and syslog and verify that crontab entries of cronaide are running properly
+
+    M: unable to find job in syslog
+    E: job timed out and was killed
+    S: job ran successfully
+    F: job ran and failed
+    """
     crontab = read('/etc/crontab')
     cron_jobs = {}
     commands = []
