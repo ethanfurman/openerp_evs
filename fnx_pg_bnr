@@ -8,6 +8,7 @@ from scription import *
 from tempfile import mkdtemp
 import os
 import pwd
+import re
 import time
 
 settings = IniFile('/etc/openerp/fnx.ini', section='postgres')
@@ -32,7 +33,7 @@ PORT = None
         rescue=('ignore checks', FLAG),
         )
 def main():
-    print('main::0', verbose=2)
+    print('  main::0', verbose=2)
     global START_DIR, TEMP, RESCUE
     RESCUE = rescue
     if not rescue:
@@ -41,18 +42,19 @@ def main():
         if not MONTHLY_STORAGE.exists():
             raise SystemExit('%s needs to be created, and owned by postgres' % MONTHLY_STORAGE)
     START_DIR = Path.getcwd()
-    print('main::1', verbose=2)
+    _get_pg_port()
+    print('  main::1', verbose=2)
     try:
         with user_ids(*POSTGRES_IDS):
-            print('main::2', verbose=2)
+            print('  main::2', verbose=2)
             TEMP = Path(mkdtemp(dir=unicode('/tmp'), suffix='_pgdbs'))
         script_command()
         print('finished')
     finally:
-        print('main::3', verbose=2)
+        print('  main::3', verbose=2)
         if TEMP:
             TEMP.rmtree()
-        print('main::4', verbose=2)
+        print('  main::4', verbose=2)
         START_DIR.chdir()
 
 
@@ -65,26 +67,25 @@ def backup(dbs, id, dst):
     """
     backs up all postgres databases, roles, etc., or single databases
     """
-    print('backup::0', verbose=2)
-    _get_pg_port()
-    print('backup::1', verbose=2)
+    print('  backup::0', verbose=2)
+    print('  backup::1', verbose=2)
     everything = not bool(dbs)
     print('backing up everything?', everything)
     with user_ids(*POSTGRES_IDS):
         print('backup::', verbose=2)
         TEMP.chdir()
         if not dbs and not RESCUE and not dst:
-            print('backup::2', verbose=2)
+            print('  backup::2', verbose=2)
             store = True
             storage = DAILY_STORAGE
-            dbs = _get_dbs()
+            dbs = _get_dbs_from_postgres()
         else:
-            print('backup::3', verbose=2)
+            print('  backup::3', verbose=2)
             store = False
             storage = TEMP
             if RESCUE and not dbs:
-                dbs = _get_dbs()
-        template = '%s_%%s_pg91.sql' % TODAY
+                dbs = _get_dbs_from_postgres()
+        template = '%%s.sql'
         failures = False
         # first, backup as many databases as we can
         print('backing up . . .')
@@ -102,7 +103,7 @@ def backup(dbs, id, dst):
             else:
                 print()
             if result.stdout:
-                for line in result.stdout.split('\n'):
+                for line in result.stdout.strip().split('\n'):
                     print('   %s' % line)
             if result.returncode:
                 print('       %s' % pg_dump, file=stderr)
@@ -116,20 +117,20 @@ def backup(dbs, id, dst):
     time.sleep(5)
     # postgres is backed up, revert to root privilege
     # then, combine them all into a single tar.gz file
-    print('backup::4', verbose=2)
+    print('  backup::4', verbose=2)
     tgz_file = _tgz(TEMP, storage, id)
     # finally, make a copy in monthly if today is the first
     # but only if store == True
     if store:
         if TODAY.day == 1:
-            print('backup::5', verbose=2)
+            print('  backup::5', verbose=2)
             tgz_file.copy(MONTHLY_STORAGE)
-            print('backup::6', verbose=2)
+            print('  backup::6', verbose=2)
         _remove_excess(DAILY_STORAGE)
     else:
-        print('backup::7', verbose=2)
+        print('  backup::7', verbose=2)
         tgz_file.chown(*ACTUAL_IDS)
-        print('backup::8', verbose=2)
+        print('  backup::8', verbose=2)
         tgz_file.copy(dst or START_DIR)
     if failures:
         raise SystemExit('not all databases backed up')
@@ -137,7 +138,7 @@ def backup(dbs, id, dst):
 
 @Command()
 def dbs():
-    print('databases available: ', ', '.join(_get_dbs()), verbose=0)
+    print('databases available: ', ', '.join(_get_dbs_from_postgres()), verbose=0)
 
 
 @Command(
@@ -146,16 +147,16 @@ def dbs():
         file=Spec('archive file to extract from', OPTION, None, Path),
         )
 def extract(date, dbs, file):
-    print('extract::0', verbose=0)
+    print('  extract::0', verbose=2)
     if date and file:
         abort('only one of DATE and FILE may be specified')
     if not (date or file):
         abort('must have one of DATE or FILE')
     if date:
-        print('extract::1', verbose=0)
+        print('  extract::1', verbose=2)
         found = DAILY_STORAGE.glob('%s*' % date)
         if not found:
-            print('extract::2', verbose=0)
+            print('  extract::2', verbose=2)
             found = MONTHLY_STORAGE.glob('%s*' % date)
             if not found:
                 raise ValueError('no files found for %s' % date)
@@ -171,7 +172,7 @@ def extract(date, dbs, file):
         sql_file = _extract(db, file)
         extracted.append(sql_file)
     with user_ids(0, 0):
-        print('extract::3', verbose=0)
+        print('  extract::3', verbose=2)
         for file in extracted:
             file.chown(*ACTUAL_IDS)
 
@@ -186,148 +187,107 @@ def list(date, file, daily, monthly):
     """
     show all tables archived for DATE, or stored in FILE
     """
-    print('list::0', verbose=2)
+    print('  list::0', verbose=2)
     if sum(1 for p in [date, file, daily, monthly] if p) != 1:
         help('at least one (and only one) of DATE, FILE, DAILY, and MONTHLY may be specified')
     if daily:
-        print('list::1', verbose=2)
+        print('  list::1', verbose=2)
         for file in sorted(DAILY_STORAGE.glob('*')):
             print(file, verbose=0)
     elif monthly:
-        print('list::2', verbose=2)
+        print('  list::2', verbose=2)
         for file in sorted(MONTHLY_STORAGE.glob('*')):
             print(file, verbose=0)
     else:
-        print('list::3', verbose=2)
+        print('  list::3', verbose=2)
         if date:
             found = DAILY_STORAGE.glob('%s*' % date)
             if not found:
-                print('list::4', verbose=2)
+                print('  list::4', verbose=2)
                 found = MONTHLY_STORAGE.glob('%s*' % date)
                 if not found:
                     abort('no files found for %s' % date)
             if len(found) > 1:
                 abort('should only have one match, but found %s' % ', '.join(found))
             [file] = found
-        print('list::5', verbose=2)
+        print('  list::5', verbose=2)
         print(file)
         db_names = _list(file)
         for name in db_names:
             print('   %s' % name, verbose=0)
         print()
-        print('list::6', verbose=2)
+        print('  list::6', verbose=2)
 
 
 @Command(
         date=('date of archive to restore from', OPTION, None, Date),
-        db=('database in archive to restore', REQUIRED, None),
+        db=('database in archive to restore', OPTION, None),
         file=('archive file to extract from / sql file to restore from', OPTION, None, Path),
         new_db=('restore as a new database [default: restore to same database]', OPTION, None),
+        all_dbs=('restore all databases found in backup', FLAG, None),
         )
-def restore(db, date, file, new_db):
-    print('restore::0', verbose=2)
+def restore(db, date, file, new_db, all_dbs):
+    print('  restore::0', verbose=2)
+    if db and not _user_exists('openerp') and not RESCUE:
+        abort('missing openerp user in postgresql, aborting restore [use --resuce to override]')
+    all_db_names = []
+    all_sql_files = []
     if date and file:
         raise ValueError('only one of DATE and FILE may be specified')
-    if not db:
-        raise ValueError('NAME must be specified')
     # if file and not (name or new_db):
     #     raise ValueError('either NAME or NEW_DB must be specified with FILE')
-    _get_pg_port()
     tgz_file = sql_file = None
+    if date:
+        print('  restore::1', verbose=2)
+        found = DAILY_STORAGE.glob('%s*' % date)
+        if not found:
+            print('  restore::2', verbose=2)
+            found = MONTHLY_STORAGE.glob('%s*' % date)
+            if not found:
+                raise ValueError('no files found for %s' % date)
+        if len(found) > 1:
+            raise ValueError('should only have one match, but found %s' % ', '.join(found))
+        [file] = found
     if file:
-        print('restore::1', verbose=2)
+        print('  restore::3', verbose=2)
         # if a file is specified copy it to TEMP
         file.copy(TEMP)
         file = TEMP/file.filename
         file.chown(*POSTGRES_IDS)
         if file.ext in ('.tar', '.gz', '.tgz'):
             tgz_file = file
+            all_db_names = _list(tgz_file)
         else:
             sql_file = file
-    print('restore::2', verbose=2)
+            if db is None:
+                db = _db_name_from_file(sql_file)
+    print('  restore::4', verbose=2)
     with user_ids(*POSTGRES_IDS):
-        print('restore::3', verbose=2)
+        print('  restore::5', verbose=2)
         TEMP.chdir()
-        if date:
-            print('restore::4', verbose=2)
-            found = DAILY_STORAGE.glob('%s*' % date)
-            if not found:
-                print('restore::5', verbose=2)
-                found = MONTHLY_STORAGE.glob('%s*' % date)
-                if not found:
-                    raise ValueError('no files found for %s' % date)
-            if len(found) > 1:
-                raise ValueError('should only have one match, but found %s' % ', '.join(found))
-            [tgz_file] = found
+        print('  sql_file: %s\n  tgz_file: %s' % (sql_file, tgz_file), verbose=2)
         if tgz_file:
-            print('restore::5', verbose=2)
-            # at this point, we have the archive file, and we have the name of the database to extract
-            sql_file = _extract(db, tgz_file)
-        # we now have an sql file to restore from
-        if new_db is None:
-            new_db = db
-        if not new_db.startswith('test_'):
-            print('restore::6', verbose=2)
-            current_dbs = _get_dbs()
-            if new_db in current_dbs:
-                answer = get_response('\n%s already exists -- [r]ename or [o]verwrite?' % new_db)
-                if answer == 'overwrite':
-                    if not get_response('\nthis cannot be undone -- are you sure?'):
-                        raise SystemExit('database restore aborted')
-                    # drop...
-                    _psql('-c "DROP DATABASE %s;"' % new_db)
-                elif answer == 'rename':
-                    print('\ncurrent databases:', verbose=0)
-                    for db in current_dbs:
-                        print('  ', db, verbose=0)
-                    new_name = get_response(
-                            '\nnew database name:',
-                            validate=lambda name: name not in current_dbs,
-                            type=lambda name: name,
-                            retry='that name is also in use, please choose another',
-                            )
-                    # rename...
-                    _psql('-c "ALTER DATABASE %s RENAME TO %s;"' % (new_db, new_name))
-                else:
-                    raise Exception('unable to process response of %r' % answer)
+            print('  restore::6', verbose=2)
+            # at this point, we have the archive file, and we have the
+            # name(s) of the database to extract in db or all_db_names
+            if db:
+                print('  restore::7', verbose=2)
+                sql_file = _extract(db, tgz_file)
+            else:
+                print('  restore::8', verbose=2)
+                print('extracting sql files...')
+                for _db in all_db_names:
+                    all_sql_files.append(_extract(_db, tgz_file))
+        # we now have sql file(s) to restore from
+        if all_dbs:
+            # restore everything
+            _restore_all_dbs(all_sql_files, all_db_names)
         else:
-            print('restore::7', verbose=2)
-            # overwrite test_ databases
-            _psql('-c "DROP DATABASE IF EXISTS %s;"' % new_db)
-        # at this point we are good to restore...
-        #
-        # (re)create the new database
-        log_file = Path(new_db+'.log')
-        print('restore::8', verbose=2)
-        _psql('''-c "CREATE DATABASE %s TEMPLATE template1 ENCODING 'unicode';"''' % new_db)
-        try:
-            error = None
-            print('restore::9', verbose=2)
-            _psql(
-                    '--log-file %(log)s --echo-all --file %(sql)s %(db_name)s'
-                    % dict(sql=sql_file, db_name=new_db, log=log_file),
-                    )
-            print('restore::10', verbose=2)
-            _psql('-c "ALTER DATABASE %s OWNER TO openerp;"' % new_db)
-        except Exception, exc:
-            error = exc
-        with user_ids(0, 0):
-            print('restore::11', verbose=2)
-            dest_file = START_DIR/new_db+'.log'
-            if dest_file.exists():
-                print('restore::12', verbose=2)
-                dest_file.remove()
-            print('restore::13', verbose=2)
-            log_file.chown(*ACTUAL_IDS)
-            print('restore::14', verbose=2)
-            log_file.move(dest_file)
-        if error:
-            raise error
-        # possibly examine the log file for errors here
+            # restore single database
+            _restore_single_db(sql_file, db, new_db)
 
 
 def _backup(db, filename):
-    _get_pg_port()
     pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db, port=PORT)
     print('   %s' % db, end='')
     result = Execute(pg_dump, pty=False)
@@ -336,7 +296,7 @@ def _backup(db, filename):
     else:
         print()
     if result.stdout:
-        for line in result.stdout.split('\n'):
+        for line in result.stdout.strip().split('\n'):
             print('   %s' % line)
     if result.returncode:
         print('       %s' % pg_dump, file=stderr)
@@ -345,22 +305,55 @@ def _backup(db, filename):
         print()
     return not result.returncode
 
-def _extract(name, found):
-    date = found.filename[:10]
-    name = '%s_%s_pg91.sql' % (date, name)
-    tgz_cmd = TGZEXTRACT % dict(archive=found, target=name)
-    result = Execute(tgz_cmd, pty=False)
-    if result.stdout:
-        for line in result.stdout.split('\n'):
-            print(line)
-    if result.returncode:
+def _db_name_from_file(filename, datestr=None):
+    print('  _db_name_from_file::0', verbose=2)
+    print('  checking', filename, 'for datestr %r' % datestr, verbose=2)
+    if datestr is None:
+        # probably an sql filename
+        return re.sub('\d{4}-\d{1,2}-\d{1,2}_', '', filename.split('.')[0])
+    if filename.startswith(datestr):
+        # old style with leading date and '_pg91.sql' trailer
+        db_name = filename[11:].rsplit('_', 1)[0].strip()
+    else:
+        # new style with .sql trailer
+        db_name = filename[:-4]
+    return db_name
+
+def _extract(name, archive):
+    print('_extract::0', verbose=2)
+    date = archive.filename[:10]
+    deprecated_name = '%s_%s_pg91.sql' % (date, name)
+    name = name + '.sql'
+    for target in (name, deprecated_name):
+        tgz_cmd = TGZEXTRACT % dict(archive=archive, target=target)
+        result = Execute(tgz_cmd, pty=False)
+        if result.returncode == 0:
+            print('  %s extracted' % target, verbose=2)
+            break
+    else:
+        if result.stdout:
+            for line in result.stdout.strip().split('\n'):
+                print(line)
+        print('return code:', result.returncode, file=stderr)
         for line in result.stderr.split('\n'):
             print(line, file=stderr)
         raise SystemExit(result.returncode)
-    return Path(name)
+    return Path(target)
 
-def _get_dbs():
-    _get_pg_port()
+def _get_dbs_from_postgres():
+    result = _psql('--list --tuple')
+    dbs = []
+    for line in result.split('\n'):
+        db = line.split('|', 1)[0].strip()
+        if db and db != 'template0':
+            # template0 is special, and cannot be accessed
+            dbs.append(db)
+    if not dbs:
+        print('FAILED: %s' % psql, file=stderr)
+        raise SystemExit('no databases found!')
+    return dbs
+
+def _get_dbs_from_tar(tar_file):
     result = _psql('--list --tuple')
     dbs = []
     for line in result.split('\n'):
@@ -396,12 +389,15 @@ def _get_pg_port():
         PSQLCMD = (PSQLCMD % dict(port=PORT)).strip()
 
 def _list(archive):
+    print('  _list::1', verbose=2)
+    print('checking archive', archive.filename)
+    datestr = archive.filename[:11]
     tgz_cmd = TARDISPLAY % dict(target=archive)
     result = Execute(tgz_cmd, pty=False)
     dbs = []
     if result.stdout:
-        for line in result.stdout.split('\n'):
-            db_name = line[11:].rsplit('_', 1)[0].strip()
+        for line in result.stdout.strip().split('\n'):
+            db_name = _db_name_from_file(line, datestr)
             if db_name:
                 dbs.append(db_name)
     if result.returncode:
@@ -409,6 +405,7 @@ def _list(archive):
         for line in result.stderr.split('\n'):
             print('   %s' % line, file=stderr)
         raise SystemExit(result.returncode)
+    print('  found: ', ', '.join(dbs))
     return dbs
 
 def _psql(cmd):
@@ -418,12 +415,13 @@ def _psql(cmd):
     with user_ids(*POSTGRES_IDS):
         result = Execute(cmd, pty=False)
     if result.returncode:
+        lines = []
         if result.returncode != -1:
-            print('FAILED: <%d> %s' % (result.returncode, cmd), file=stderr)
+            lines.append('FAILED: <%d> %s' % (result.returncode, cmd))
         for line in result.stderr.split('\n'):
-            print('   %s' % line, file=stderr)
+            lines.append('   %s' % line)
         if result.returncode != -1:
-            raise SystemExit(result.returncode)
+            raise Exception('\n'.join(lines))
     return result.stdout
 
 def _remove_excess(storage):
@@ -439,6 +437,137 @@ def _remove_excess(storage):
     except:
         print(sys.exc_info(), file=stderr)
         raise
+
+def _restore_all_dbs(sql_files, dbs):
+    print('  _restore_all::0', verbose=2)
+    if len(sql_files) != len(dbs):
+        print('sql files:\n  ', '\n   '.join(sql_files), file=stderr)
+        print('db names:\n  ', '\n   '.join(dbs), file=stderr)
+        abort('number of files vs number of databases differ')
+    print('  _restore_all::1', verbose=2)
+    for db in dbs:
+        # some databases cannot be dropped
+        if db in ('_roles_etc', 'postgres', 'template1'):
+            continue
+        print('dropping', db)
+        _psql('-c "DROP DATABASE IF EXISTS %s;"' % db)
+    log_file = Path('restore_all.log')
+    print('  _restore_all::3', verbose=2)
+    print('restoring globals... ', end='')
+    _psql('--log-file %s --echo-all --file _roles_etc.sql' % log_file)
+    print('success\nrestoring postgres... ', end='')
+    postgres_file = sql_files[dbs.index('postgres')]
+    if 'postgres' not in postgres_file:
+        abort('\nlogic error: "postgres" table not in "%s"' % postgres_file)
+    _psql('--log-file %s --echo-all --file %s postgres' % (log_file, postgres_file))
+    print('sucess\nrestoring template1... ', end='')
+    template1_file = sql_files[dbs.index('template1')]
+    if 'template1' not in template1_file:
+        abort('\nlogic error: "template1" table not in "%s"' % template1_file)
+    _psql('--log-file %s --echo-all --file %s template1' % (log_file, template1_file))
+    print('success')
+    errors = []
+    for db, sql_file in zip(dbs, sql_files):
+        if db in ('_roles_etc', 'template1', 'postgres'):
+            continue
+        print('restoring %s... ' % db, end='')
+        _psql('''-c "CREATE DATABASE %s TEMPLATE template1 ENCODING 'unicode';"''' % db)
+        try:
+            error = None
+            print('  _restore_all::4', verbose=2)
+            _psql(
+                    '--log-file %(log)s --echo-all --file %(sql)s %(db_name)s'
+                    % dict(sql=sql_file, db_name=db, log=log_file),
+                    )
+            print('  _restore_all::5', verbose=2)
+            # TODO: find out if changing the owner is necessary
+            _psql('-c "ALTER DATABASE %s OWNER TO openerp;"' % db)
+        except Exception, exc:
+            print('FAILED')
+            errors.append(exc)
+        else:
+            print('success')
+    with user_ids(0, 0):
+        print('  _restore_all::6', verbose=2)
+        dest_file = START_DIR/log_file.filename
+        if dest_file.exists():
+            print('  _restore_all::7', verbose=2)
+            dest_file.remove()
+        print('  _restore_all::8', verbose=2)
+        log_file.chown(*ACTUAL_IDS)
+        print('  _restore_all::9', verbose=2)
+        log_file.move(dest_file)
+    if errors:
+        print('\nerrors', file=stderr)
+        for error in errors:
+            print('------', file=stderr)
+            print(error, file=stderr)
+        print('------', file=stderr)
+        abort('errors encountered')
+        # possibly examine the log file for errors here
+
+def _restore_single_db(sql_file, db, new_db):
+    abort('single db: testing')
+    if new_db is None:
+        new_db = db
+    if not new_db.startswith('test_'):
+        print('  _restore_single::1', verbose=2)
+        current_dbs = _get_dbs_from_postgres()
+        if new_db in current_dbs:
+            answer = get_response('\n%s already exists -- [r]ename or [o]verwrite?' % new_db)
+            if answer == 'overwrite':
+                if not get_response('\nthis cannot be undone -- are you sure?'):
+                    raise SystemExit('database restore aborted')
+                # drop...
+                _psql('-c "DROP DATABASE %s;"' % new_db)
+            elif answer == 'rename':
+                print('\ncurrent databases:', verbose=0)
+                for db in current_dbs:
+                    print('  ', db, verbose=0)
+                new_name = get_response(
+                        '\nnew database name:',
+                        validate=lambda name: name not in current_dbs,
+                        type=lambda name: name,
+                        retry='that name is also in use, please choose another',
+                        )
+                # rename...
+                _psql('-c "ALTER DATABASE %s RENAME TO %s;"' % (new_db, new_name))
+            else:
+                raise Exception('unable to process response of %r' % answer)
+    else:
+        print('  _restore_single::2', verbose=2)
+        # overwrite test_ databases
+        _psql('-c "DROP DATABASE IF EXISTS %s;"' % new_db)
+    # at this point we are good to restore...
+    #
+    # (re)create the new database
+    log_file = Path(new_db+'.log')
+    print('  _restore_single::3', verbose=2)
+    _psql('''-c "CREATE DATABASE %s TEMPLATE template1 ENCODING 'unicode';"''' % new_db)
+    try:
+        error = None
+        print('  _restore_single::4', verbose=2)
+        _psql(
+                '--log-file %(log)s --echo-all --file %(sql)s %(db_name)s'
+                % dict(sql=sql_file, db_name=new_db, log=log_file),
+                )
+        print('  _restore_single::5', verbose=2)
+        _psql('-c "ALTER DATABASE %s OWNER TO openerp;"' % new_db)
+    except Exception, exc:
+        error = exc
+    with user_ids(0, 0):
+        print('  _restore_single::6', verbose=2)
+        dest_file = START_DIR/new_db+'.log'
+        if dest_file.exists():
+            print('  _restore_single::7', verbose=2)
+            dest_file.remove()
+        print('  _restore_single::8', verbose=2)
+        log_file.chown(*ACTUAL_IDS)
+        print('  _restore_single::9', verbose=2)
+        log_file.move(dest_file)
+    if error:
+        raise error
+    # possibly examine the log file for errors here
 
 def _tgz(source_path, target_path, id=None):
     if id is None:
@@ -458,5 +587,14 @@ def _tgz(source_path, target_path, id=None):
         raise SystemExit(result.returncode)
     print('\ncompressing . . .')
     return target
+
+def _user_exists(user):
+    output = _psql('select rolname from pg_authid;').split('\n')
+    result = False
+    for i, line in enumerate(output[2:], start=1):
+        print(i, line)
+        if line == user:
+            result = True
+    return result
 
 Main()
