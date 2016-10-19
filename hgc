@@ -6,7 +6,8 @@ from scription import Command, Execute, Main, OPTION, REQUIRED
 
 search = (
     Path('/usr/lib/pymodules/python2.7'),
-    Path('/usr/local/bin')
+    Path('/usr/local/bin'),
+    Path('/opt'),
     )
 
 def workhorse(*path):
