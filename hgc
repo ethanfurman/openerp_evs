@@ -188,9 +188,7 @@ def status(*path):
     )
 def update(repo, *path):
     '''
-    update active files to latest version
-
-    uses 'running' tag if available, otherwise 'tip'
+    update active files to latest default version
     '''
     target = repo
     for repo in workhorse(*path):
@@ -198,18 +196,7 @@ def update(repo, *path):
             continue
         print repo
         print '=' * 76
-        history = Execute(('hg', 'branches'), timeout=30, cwd=repo)
-        desired = ''
-        for line in history.stdout.split('\n'):
-            if not line:
-                continue
-            branch, revision = line.split(None, 1)
-            if branch == 'run':
-                desired = branch
-        if desired:
-            history = Execute(('hg', 'update', desired), timeout=30, cwd=repo)
-        else:
-            history = Execute(('hg', 'update', ), timeout=30, cwd=repo)
+        history = Execute(('hg', 'update', 'default'), timeout=30, cwd=repo)
         if history.stderr:
             print repo
             print '=' * 76
