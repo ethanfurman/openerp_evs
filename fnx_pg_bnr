@@ -324,13 +324,16 @@ def _extract(name, archive):
     date = archive.filename[:10]
     deprecated_name = '%s_%s_pg91.sql' % (date, name)
     name = name + '.sql'
+    print('_extract::1', verbose=2)
     for target in (name, deprecated_name):
+        print('_extract::2', verbose=2)
         tgz_cmd = TGZEXTRACT % dict(archive=archive, target=target)
         result = Execute(tgz_cmd, pty=False)
         if result.returncode == 0:
             print('  %s extracted' % target, verbose=2)
             break
     else:
+        print('_extract::3', verbose=2)
         if result.stdout:
             for line in result.stdout.strip().split('\n'):
                 print(line)
@@ -338,6 +341,7 @@ def _extract(name, archive):
         for line in result.stderr.split('\n'):
             print(line, file=stderr)
         raise SystemExit(result.returncode)
+    print('_extract::4', verbose=2)
     return Path(target)
 
 def _get_dbs_from_postgres():
@@ -507,7 +511,6 @@ def _restore_all_dbs(sql_files, dbs):
         # possibly examine the log file for errors here
 
 def _restore_single_db(sql_file, db, new_db):
-    abort('single db: testing')
     if new_db is None:
         new_db = db
     if not new_db.startswith('test_'):
@@ -589,11 +592,11 @@ def _tgz(source_path, target_path, id=None):
     return target
 
 def _user_exists(user):
-    output = _psql('select rolname from pg_authid;').split('\n')
+    output = _psql('-c "select rolname from pg_authid;"').split('\n')
     result = False
     for i, line in enumerate(output[2:], start=1):
         print(i, line)
-        if line == user:
+        if line.strip() == user:
             result = True
     return result
 
