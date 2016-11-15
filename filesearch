@@ -12,13 +12,20 @@ import re
         dirs_only=('only search dir names', FLAG),
         timestamp=('display timestamp of file', FLAG),
         hidden=('show hidden files/directories', FLAG),
-        execute=('run command on each file found (%s is substituted with path', OPTION),
+        execute=('run command on each file found (replaceable options: %one %all)', OPTION),
         )
 @Alias('fs')
 def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, *regex):
-    "Searches for `name` in `path`."
+    "Searches for directories/files that match REGEX in PATH."
     print('searching %s for %r ' % (path, regex), ('', '(files only)')[files_only], ('', '(dirs only)')[dirs_only], sep='')
+    single = True
     if execute:
+        if '%all' in execute:
+            single = False
+            execute = execute.replace('%all', '%s')
+        elif '%one' in execute:
+            single = True
+            execute = execute.replace('%one', '%s')
         # weed out %%s
         temp = execute.replace('%%s', '')
         if '%s' not in temp:
@@ -31,49 +38,58 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, *regex):
     if not regex:
         regex = ('.*', )
     for tree, dirs, files in path.walk():
+        print('processing', tree)
         if not execute:
             print('  ', tree, verbose=2)
         dirs.sort()
         files.sort()
         if not files_only:
+            found_dirs = []
             for d in dirs:
                 for p in regex:
                     if hidden or (d.startswith('.') and p.startswith('^\.')) or not d.startswith('.'):
                         if re.search(p, d):
                             target = tree/d-base
                             if execute:
-                                print('executing', execute % target, verbose=2)
-                                history = Execute(execute % target)
-                                for stream in ('stdout', 'stderr'):
-                                    stream = getattr(history, stream)
-                                    if stream:
-                                        print(stream, end='')
-                                if history.returncode:
-                                    abort('%r returned code %r' % (execute % target, history.returncode))
+                                if single:
+                                    command(execute % target)
+                                else:
+                                    found_dirs.append(target)
                             else:
                                 if timestamp:
                                     print(datetime.fromtimestamp((tree/d).stat()[8]), '   ', target, verbose=0)       # mtime
                                 else:
                                     print(target, verbose=0)       # mtime
+            if found_dirs:
+                command(execute % ' '.join(found_dirs))
         if not dirs_only:
+            found_files = []
             for f in files:
                 for p in regex:
                     if hidden or (f.startswith('.') and p.startswith('^\.')) or not f.startswith('.'):
                         if re.search(p, f):
                             target = tree/f-base
                             if execute:
-                                print('executing', execute % target, verbose=2)
-                                history = Execute(execute % target)
-                                for stream in ('stdout', 'stderr'):
-                                    stream = getattr(history, stream)
-                                    if stream:
-                                        print(stream, end='')
-                                if history.returncode:
-                                    abort('%r returned code %r' % (execute % target, history.returncode))
+                                if single:
+                                    command(execute % target)
+                                else:
+                                    found_files.append(target)
                             else:
                                 if timestamp:
                                     print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', target, verbose=0)       # mtime
                                 else:
                                     print(target, verbose=0)       # mtime
+            if found_files:
+                command(execute % ' '.join(found_files))
+
+def command(command):
+    print('executing', command, verbose=2)
+    history = Execute(command)
+    for stream in ('stdout', 'stderr'):
+        stream = getattr(history, stream)
+        if stream:
+            print(stream, end='')
+    if history.returncode:
+        abort('%r returned code %r' % (command, history.returncode))
 
 Run()
