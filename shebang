@@ -42,9 +42,9 @@ def combinate(iter1, iter2):
 stoneleaf_hg = Path('stoneleaf_hg.py')
 if stoneleaf_hg.exists():
     for preference, path in combinate(
-            ('/usr/local/lib/.*/site-packages',
-            '/usr/local/lib/.*/dist-packages',
-            '.*/pymodules/.*',
+            ('/usr/local/lib/.*/site-packages$',
+            '/usr/local/lib/.*/dist-packages$',
+            '.*/pymodules/python%d.%d$' % sys.version_info[:2],
             ),
             sys.path,
             ):
@@ -53,6 +53,6 @@ if stoneleaf_hg.exists():
     else:
         print('unable to locate destination for stoneleaf_hg.py')
         raise SystemExit(1)
-    print('copying stoneleaf_Hg.py to %s' % path)
+    print('copying %s to %s' % (stoneleaf_hg, path))
     stoneleaf_hg.copy(path)
 
