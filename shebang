@@ -5,9 +5,15 @@ here, you must start with whichever python you desire
 
 the new scripts are written to the parent directory (/usr/local/bin
 in most cases)
+
+also installs stoneleaf_hg.py into sys.path; order of preference:
+- /usr/local/lib/.../site-packages
+- /usr/local/lib/.../dist-packages
+- .../pymodules/...
 """
 
 from antipathy import Path
+import re
 import sys
 
 new_shebang = '#!' + sys.executable
@@ -27,3 +33,26 @@ for current, dirs, files in Path.walk('.'):
             fh.write(new_shebang + '\n')
         fh.write(data)
         fh.close()
+
+def combinate(iter1, iter2):
+    for i in iter1:
+        for j in iter2:
+            yield i, j
+
+stoneleaf_hg = Path('stoneleaf_hg.py')
+if stoneleaf_hg.exists():
+    for preference, path in combinate(
+            ('/usr/local/lib/.*/site-packages',
+            '/usr/local/lib/.*/dist-packages',
+            '.*/pymodules/.*',
+            ),
+            sys.path,
+            ):
+        if re.match(preference, path):
+            break
+    else:
+        print('unable to locate destination for stoneleaf_hg.py')
+        raise SystemExit(1)
+    print('copying stoneleaf_Hg.py to %s' % path)
+    stoneleaf_hg.copy(path)
+
