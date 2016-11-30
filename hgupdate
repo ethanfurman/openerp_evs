@@ -1,0 +1,42 @@
+#!/usr/local/bin/suid-python
+from __future__ import print_function
+
+from antipathy import Path
+from mercurial.ui import ui
+from scription import *
+from scription import _namespace as NS, echo, error
+
+import ast
+import grp
+import os
+import py_compile
+import pwd
+import traceback
+
+@Command(
+        repo=Spec('root directory of repo', type=Path),
+        )
+def set_owner_of(repo):
+    "sets the root directory owner as owner of all sub-files/directories"
+    hg = extract_hg()
+    stat = repo.stat()
+    uid = stat.st_uid
+    gid = stat.st_gid
+    user = pwd.getpwuid(uid).pw_name
+    group = grp.getgrgid(gid).gr_name
+    job = Execute('chown -R %s:%s %s' % (user, group, repo))
+    echo(job.stdout, end='')
+    error(job.stderr, end='')
+    raise SystemExit(job.returncode)
+
+def extract_hg():
+    ns = NS()
+    ns.names = []
+    for k, v in os.environ.items():
+        if k.startswith('HG_'):
+            name = k[3:].lower()
+            ns.names.append(name)
+            ns[name] = v
+    return ns
+
+Main()
