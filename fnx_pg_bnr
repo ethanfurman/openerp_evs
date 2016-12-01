@@ -85,14 +85,16 @@ def backup(dbs, id, dst):
             storage = TEMP
             if RESCUE and not dbs:
                 dbs = _get_dbs_from_postgres()
-        template = '%%s.sql'
+        template = '%s.sql'
         failures = False
         # first, backup as many databases as we can
-        print('backing up . . .')
+        print('backing up: ', end=' ')
         for db in dbs:
+            print(db, end=' ')
             file = template % db
             if not _backup(db, file) and not db.startswith('template'):
                 failures = True
+        print()
         if everything:
             # if everything, get globals options...
             pg_dumpall = PGDUMPALLCMD % dict(filename=TEMP/'_roles_etc.sql', port=PORT)
