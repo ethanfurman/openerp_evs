@@ -10,6 +10,13 @@ import os
 import py_compile
 import re
 import traceback
+try:
+    from pyflakes.api import check as Flakes
+    from pyflakes.reporter import Reporter
+except ImportError:
+    print('pyflakes not installed')
+    Flakes = Reporter = None
+
 
 @Command(
         files=Spec('files to check for syntax errors', OPTION, type=Path),
@@ -26,7 +33,7 @@ def hgsanity(*files):
     else:
         print('no repo')
         repo = None
-    notes = []
+    notes = Notes()
     for file in files:
         if repo:
             path = repo / file
@@ -60,16 +67,17 @@ def check_python(path, notes):
         # first check for syntax errors
         ast.parse(data, path)
     except Exception as e:
-        lastfile = file
+        lastfile = path
         notes.extend(traceback.format_exception_only(type(e), e))
     else:
+        filename = path.filename
         # then check mixed tab indentation and trailing whitespace,
         # and forgotten pdb.set_trace()
         for i, line in enumerate(data.split('\n'), start=1):
             if re.search('\s+#.*do not commit.*', line, re.IGNORECASE):
                 # catch don't commit comments
-                notes.append('%s: do not commit this file\n' % (path, ))
-                break
+                notes.append('%s:%d: do not commit this file\n' % (filename, i))
+                continue
             elif re.search('\s*#', line):
                 # ignore other comment lines
                 continue
@@ -77,7 +85,7 @@ def check_python(path, notes):
                 if lastfile not in (None, path):
                     notes.append('-' * 75 + '\n')
                     lastfile = path
-                notes.append('%s: pdb.''set_trace() found in line %d\n' % (path, i))
+                notes.append('%s:%d: pdb.''set_trace() found\n' % (filename, i))
             for ch in line:
                 if ch not in ' \t':
                     break
@@ -85,13 +93,17 @@ def check_python(path, notes):
                     if lastfile not in (None, path):
                         notes.append('-' * 75 + '\n')
                         lastfile = path
-                    notes.append('%s: tab indentation in line %d\n' % (path, i))
+                    notes.append('%s:%d: tab indentation\n' % (filename, i))
                     break
             if line and line[-1] in ' \t':
                 if lastfile not in (None, path):
                     notes.append('-' * 75 + '\n')
                     lastfile = path
-                notes.append('%s: trailing whitespace in line %d\n' % (path, i))
+                notes.append('%s:%d: trailing whitespace\n' % (filename, i))
+        # run through pyflakes if available
+        if Flakes is not None:
+            reporter = Reporter(notes, notes)
+            Flakes(data, filename, reporter=reporter)
 
 def check_xml(path, notes):
     "path is the file to check, notes is a list to update with problems"
@@ -140,5 +152,12 @@ def filetype(path):
 def firstline(path):
     with open(path) as f:
         return f.readline()
+
+class Notes(list):
+    "list with a write method"
+
+    def write(self, text):
+        self.append(text)
+
 
 Main()
