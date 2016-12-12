@@ -262,6 +262,34 @@ def tables():
         echo('%4d: %s%s' % (k, t['name'], t['desc']))
 
 
+@Command(
+        filenum=Spec('file abbreviation or number to operate on', ),
+        subset=Spec('subset template to match many records to', ),
+        code=Spec('code to match with template', type=lambda s: s and tuple(s.split(',') or s)),
+        fields=Spec('specific fields to display [default: all, counting starts with 0]', MULTI, type=int),
+        )
+def values(filenum, subset, code, fields):
+    if not fields:
+        abort('no FIELDS specified')
+    # adjust for zero-based numbering
+    fields = [i-1 for i in fields]
+    if filenum.isdigit():
+        filenum = int(filenum)
+    fis_table = fisData.fisData(filenum, subset=subset)
+    table_spec = fisData.tables[filenum]
+    table_fields = []
+    for i, row in enumerate(table_spec['fields']):
+        if i not in fields:
+            continue
+        name, spec = row[1:4:2]
+        table_fields.append((name, spec, set()))
+    for rec in [v for k, v in fis_table.get_subset(code)]:
+        for name, spec, values in table_fields:
+            values.add(rec[spec])
+    for name, spec, values in table_fields:
+        print('%s:  ' % name, ', '.join([repr(v) for v in sorted(values)]), verbose=0)
+
+
 table_keys = {
     328: '10%s000010000',
     }
