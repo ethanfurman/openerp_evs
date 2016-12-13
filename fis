@@ -164,8 +164,7 @@ def records(filenum, subset, code, fields, dbf_name):
             print('dbf fields:\n  ', '\n   '.join(dbf_types))
             table = dbf.Table(dbf_name, dbf_types).open()
     try:
-        fields = used_fields
-        # print(fields, verbose=0)
+        fields = [t[0] for t in used_fields]
         for record in records:
             field_data = []
             for i, row in enumerate(fis_fields):
@@ -178,7 +177,7 @@ def records(filenum, subset, code, fields, dbf_name):
                         lines.append('%5d | %*s | %*s | %s' % (i, -max_spec_width, spec, -max_data_width, data, comment))
                     else:
                         lines.append('%5d | %*s | %*s | %s' % (i, -max_spec_width, spec, max_data_width, data, comment))
-                if not dbf_name:
+                if not dbf_name and lines:
                     print('\n'.join(lines), verbose=0)
             if dbf_name:
                 data = []
@@ -187,7 +186,7 @@ def records(filenum, subset, code, fields, dbf_name):
                 print('field data:', data)
                 table.append(tuple(data))
             if not dbf_name:
-                print()
+                print(verbose=0)
     except Exception:
         import traceback
         traceback.print_exc()
