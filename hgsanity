@@ -103,7 +103,7 @@ def check_python(path, notes):
         # run through pyflakes if available
         if Flakes is not None:
             reporter = Reporter(notes, notes)
-            Flakes(data, filename, reporter=reporter)
+            Flakes(data, path, reporter=reporter)
 
 def check_xml(path, notes):
     "path is the file to check, notes is a list to update with problems"
