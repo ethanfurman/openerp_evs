@@ -2,14 +2,20 @@
 from __future__ import print_function
 
 from antipathy import Path
+from contextlib2 import ExitStack
 from itertools import groupby
-from textwrap import dedent, wrap
-from scription import Command, Alias, REQUIRED, OPTION, MULTI, FLAG, print, mail, Spec, Run, Execute, stderr
+from pandaemonium import PidLockFile, LockError, AlreadyLocked
+from scription import *
+from signal import SIGKILL
 from socket import getfqdn
-from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON
+from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON, LOG_ERR
+from textwrap import dedent, wrap
 from time import time
+import errno
 import gzip
+import logging
 import os
+import random
 import re
 import traceback as tb
 import sys
@@ -26,6 +32,18 @@ except:
     mail_server = 'localhost'
     notify_list = ['root@localhost']
 
+class Formatter(logging.Formatter):
+    def format(self, record):
+        record.pid = os.getpid()
+        return logging.Formatter.format(self, record)
+
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+handler = logging.FileHandler('/var/log/cronaide.log')
+handler.setFormatter(Formatter('%(asctime)s %(pid)d %(name)s %(levelname)s: %(message)s'))
+logger.addHandler(handler)
+
+# API
 
 @Command(
         email=('Who to send a test mail to.',),
@@ -63,75 +81,162 @@ def self_test():
 
 
 @Command(
-        email=Spec('Who to send job output to.', MULTI, default=notify_list),
-        timeout=Spec('maximum amount of time to run in seconds', OPTION, default=3600),
+        email=Spec('Who to send job output to.', MULTI, force_default=notify_list),
+        timeout=Spec('allowed time for job OR time to wait for lock (in seconds)', OPTION, force_default=3600),
         capture=('Send all output to EMAIL', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
-        check_stdout=Spec('check for "ERROR" in stdout stream', FLAG, abbrev=None, default=True),
+        check_stdout=Spec('check for "ERROR" in stdout stream', FLAG, abbrev=None, force_default=True),
+        lock=Spec(
+            'do LOCK if previous job still running',
+            OPTION, force_default='quit',
+            choices=['quit', 'wait', 'kill'],
+            ),
+        lock_file=Spec(
+            'use LOCK-FILE to prevent multiple concurrent runs',
+            OPTION, abbrev=('f', 'lf'), default='/var/run/${job-name}.pid',
+            ),
         job=('job to run', REQUIRED, ),
         )
 @Alias('cronaide')
-def watch(email, timeout, capture, heartbeat, passthrough, check_stdout, *job):
-    "monitor a job, sending results/status to EMAIL"
-    print('email addresses:', email)
+def watch(email, timeout, capture, heartbeat, passthrough, check_stdout, lock_file, lock, *job):
+    """monitor JOB, sending results/status to EMAIL
+
+    If the LOCK-* options are not specified, or LOCK_ACTION is quit, TIMEOUT is
+    how long JOB is allowed to run before killing it;
+
+    if LOCK is set, TIMEOUT is how long to -
+        - wait: wait for previous job to finish else give up and die
+        - kill: wait for previous job to finish else kill previous job and run
+
+    if LOCK-FILE is set, LOCK defaults to 'quit' (die if previous job still running)
+    """
+    if lock_file or lock:
+        logger.debug('lock: %s', lock)
+        if lock_file is None:
+            lock_file = script_commands[script_command_name].__scription__['lock_file']._script_default
+        lock_file = lock_file.replace('${job-name}', Path(job[0]).filename)
+        logger.debug('lock-file: %s', lock_file)
     ppid = os.getppid()
     openlog('AIDE', LOG_PID, LOG_CRON)
     failed = False
     start = time()
-    syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
-    result = Execute(job, timeout=timeout)
-    stop = time()
-    elapsed = stop - start
-    msg = None
-    if (check_stdout and 'ERROR' in result.stdout) or result.returncode or result.stderr:
-        print('error encountered, sending mail')
-        failed = True
-        body = [
-                'job:  %s' % ' '.join(job),
-                'return code: %s' % result.returncode,
-                ]
-        if result.stdout:
-            body.append('stdout\n======\n%s' % result.stdout)
-        if result.stderr:
-            body.append('stderr\n======\n%s' % result.stderr)
-        msg = message % (
-            ','.join(email),
-            'job failed:  %s' % job[0].split('/')[-1],
-            '\n\n'.join(body),
-            )
-        mail(mail_server, 25, msg)
-        syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
-    else:
-        if heartbeat:
-            print('sending heartbeat')
+    with ExitStack() as exit:
+        syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
+        exit.callback(closelog)
+        if lock_file:
+            try:
+                lock_file = PidLockFile(lock_file)
+                if lock == 'quit':
+                    # get the lock or quit
+                    try:
+                        lock_file.acquire(timeout=-1)
+                    except AlreadyLocked:
+                        logger.error('previous job(s) still running')
+                        syslog(LOG_ERR, '[from %s] previous job(s) still running, aborting' % ppid)
+                        raise LockError('previous job(s) still running')
+                    else:
+                        exit.push(lock_file)
+                elif lock == 'wait':
+                    # wait for lock, quit after timeout if unable to get lock
+                    try:
+                        lock_file.acquire(timeout=timeout)
+                    except AlreadyLocked:
+                        logger.error('previous job(s) still running after timeout')
+                        syslog(LOG_ERR, '[from %s] previous job(s) still running after timeout, aborting' % ppid)
+                        raise LockError('previous job(s) still running after timeout')
+                    else:
+                        exit.push(lock_file)
+                elif lock == 'kill':
+                    lock_file.is_stale(timeout=1)
+                    orgpid = lock_file.stored_pid
+                    try:
+                        lock_file.acquire(timeout=timeout)
+                    except AlreadyLocked:
+                        actpid = lock_file.read_pid()
+                        if orgpid is not None and orgpid != actpid:
+                            logger.error('previous job ended, another job took its place, aborting')
+                            syslog(LOG_ERR, 'previous job ended, another job took its place, aborting')
+                            raise LockError('previous job ended, another job took its place, aborting')
+                        else:
+                            try:
+                                os.kill(actpid, 0)
+                            except OSError:
+                                exc = sys.exc_info()[1]
+                                if exc.errno != errno.ESRCH:
+                                    logger.exception('error killing previous job')
+                                    syslog(LOG_ERR, '[from %s] error killing previous job' % ppid)
+                                    raise LockError('error killing previous job')
+                            try:
+                                lock_file.acquire(timeout=random.randint(1, 5))
+                            except LockError:
+                                logger.error('unable to obtain lock')
+                                syslog(LOG_ERR, '[from %s] unable to obtain lock' % ppid)
+                                raise LockError('unable to obtain lock')
+                    exit.push(lock_file)
+                else:
+                    raise ValueError('unknown option for lock: %r' % lock)
+                lock_file.seal()
+            except LockError:
+                cls, exc, tb = sys.exc_info()
+                msg = message % (
+                    ','.join(email),
+                    'job failed:  %s' % job[0].split('/')[-1],
+                    exc.args[0],
+                    )
+                mail(mail_server, 25, msg)
+                syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
+        result = Execute(job, timeout=timeout)
+        stop = time()
+        elapsed = stop - start
+        msg = None
+        if (check_stdout and 'ERROR' in result.stdout) or result.returncode or result.stderr:
+            print('error encountered, sending mail')
+            failed = True
+            body = [
+                    'job:  %s' % ' '.join(job),
+                    'return code: %s' % result.returncode,
+                    ]
+            if result.stdout:
+                body.append('stdout\n======\n%s' % result.stdout)
+            if result.stderr:
+                body.append('stderr\n======\n%s' % result.stderr)
             msg = message % (
                 ','.join(email),
-                'heartbeat: %s' % job[0].split('/')[-1],
-                'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
+                'job failed:  %s' % job[0].split('/')[-1],
+                '\n\n'.join(body),
                 )
             mail(mail_server, 25, msg)
-        if capture and result.stdout:
-            print('catch and release')
-            msg = message % (
-                ','.join(email),
-                'job:  %s' % job[0].split('/')[-1],
-                '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
-                (' '.join(job), elapsed, result.stdout),
-                )
-            mail(mail_server, 25, msg)
-        if msg:
-            syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
+            syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
         else:
-            syslog(LOG_INFO, '[from %s] succeeded' % ppid)
-    if passthrough or (failed and not email):
-        print('relaying job output')
-        if result.stdout:
-            print(result.stdout, verbose=0)
-        if result.stderr:
-            print(result.stderr, file=sys.stderr)
-        sys.exit(result.returncode)
-    closelog()
+            if heartbeat:
+                print('sending heartbeat')
+                msg = message % (
+                    ','.join(email),
+                    'heartbeat: %s' % job[0].split('/')[-1],
+                    'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
+                    )
+                mail(mail_server, 25, msg)
+            if capture and result.stdout:
+                print('catch and release')
+                msg = message % (
+                    ','.join(email),
+                    'job:  %s' % job[0].split('/')[-1],
+                    '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
+                    (' '.join(job), elapsed, result.stdout),
+                    )
+                mail(mail_server, 25, msg)
+            if msg:
+                syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
+            else:
+                syslog(LOG_INFO, '[from %s] succeeded' % ppid)
+        if passthrough or (failed and not email):
+            print('relaying job output')
+            if result.stdout:
+                print(result.stdout, verbose=0)
+            if result.stderr:
+                print(result.stderr, file=sys.stderr)
+            sys.exit(result.returncode)
     sys.exit(0)
 
 
@@ -261,6 +366,7 @@ def check_syslog():
         print('\nF: ', '\n    '.join(wrap(job)), verbose=0)
 
 
+# supporting routines
 def read(filename):
     if filename.endswith('.gz'):
         open_file = gzip.open
