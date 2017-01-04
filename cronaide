@@ -14,6 +14,7 @@ from time import time
 import errno
 import gzip
 import logging
+import logging.handlers
 import os
 import random
 import re
@@ -38,8 +39,8 @@ class Formatter(logging.Formatter):
         return logging.Formatter.format(self, record)
 
 logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-handler = logging.FileHandler('/var/log/cronaide.log')
+logger.setLevel(logging.INFO)
+handler = logging.handlers.RotatingFileHandler('/var/log/cronaide.log', maxBytes=65536, backupCount=7)
 handler.setFormatter(Formatter('%(asctime)s %(pid)d %(name)s %(levelname)s: %(message)s'))
 logger.addHandler(handler)
 
@@ -111,6 +112,8 @@ def watch(email, timeout, capture, heartbeat, passthrough, check_stdout, lock_fi
 
     if LOCK-FILE is set, LOCK defaults to 'quit' (die if previous job still running)
     """
+    if not email and (capture or heartbeat):
+        abort('if CAPTURE or HEARTBEAT is specified then EMAIL must also be specified')
     if lock_file or lock:
         logger.debug('lock: %s', lock)
         if lock_file is None:
@@ -126,73 +129,29 @@ def watch(email, timeout, capture, heartbeat, passthrough, check_stdout, lock_fi
         exit.callback(closelog)
         if lock_file:
             try:
-                lock_file = PidLockFile(lock_file)
-                if lock == 'quit':
-                    # get the lock or quit
-                    try:
-                        lock_file.acquire(timeout=-1)
-                    except AlreadyLocked:
-                        logger.error('previous job(s) still running')
-                        syslog(LOG_ERR, '[from %s] previous job(s) still running, aborting' % ppid)
-                        raise LockError('previous job(s) still running')
-                    else:
-                        exit.push(lock_file)
-                elif lock == 'wait':
-                    # wait for lock, quit after timeout if unable to get lock
-                    try:
-                        lock_file.acquire(timeout=timeout)
-                    except AlreadyLocked:
-                        logger.error('previous job(s) still running after timeout')
-                        syslog(LOG_ERR, '[from %s] previous job(s) still running after timeout, aborting' % ppid)
-                        raise LockError('previous job(s) still running after timeout')
-                    else:
-                        exit.push(lock_file)
-                elif lock == 'kill':
-                    lock_file.is_stale(timeout=1)
-                    orgpid = lock_file.stored_pid
-                    try:
-                        lock_file.acquire(timeout=timeout)
-                    except AlreadyLocked:
-                        actpid = lock_file.read_pid()
-                        if orgpid is not None and orgpid != actpid:
-                            logger.error('previous job ended, another job took its place, aborting')
-                            syslog(LOG_ERR, 'previous job ended, another job took its place, aborting')
-                            raise LockError('previous job ended, another job took its place, aborting')
-                        else:
-                            try:
-                                os.kill(actpid, 0)
-                            except OSError:
-                                exc = sys.exc_info()[1]
-                                if exc.errno != errno.ESRCH:
-                                    logger.exception('error killing previous job')
-                                    syslog(LOG_ERR, '[from %s] error killing previous job' % ppid)
-                                    raise LockError('error killing previous job')
-                            try:
-                                lock_file.acquire(timeout=random.randint(1, 5))
-                            except LockError:
-                                logger.error('unable to obtain lock')
-                                syslog(LOG_ERR, '[from %s] unable to obtain lock' % ppid)
-                                raise LockError('unable to obtain lock')
-                    exit.push(lock_file)
-                else:
-                    raise ValueError('unknown option for lock: %r' % lock)
-                lock_file.seal()
+                lock_file = get_lock(lock, lock_file, timeout)
             except LockError:
                 cls, exc, tb = sys.exc_info()
-                msg = message % (
-                    ','.join(email),
-                    'job failed:  %s' % job[0].split('/')[-1],
-                    exc.args[0],
-                    )
-                mail(mail_server, 25, msg)
-                syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
+                logger.error('%s; aborting', exc.args[0])
+                if email:
+                    msg = message % (
+                        ','.join(email),
+                        'job failed:  %s' % job[0].split('/')[-1],
+                        exc.args[0],
+                        )
+                    mail(mail_server, 25, msg)
+                    syslog(LOG_INFO, '[from %s] failed; mail sent <%r>' % (ppid, exc.args[0]))
+                    sys.exit(0)
+                else:
+                    syslog(LOG_INFO, '[from %s] failed <%r>' % (ppid, exc.args[0]))
+                    sys.exit(-1, exc.args[0])
+            else:
+                exit.push(lock_file)
         result = Execute(job, timeout=timeout)
         stop = time()
         elapsed = stop - start
         msg = None
         if (check_stdout and 'ERROR' in result.stdout) or result.returncode or result.stderr:
-            print('error encountered, sending mail')
-            failed = True
             body = [
                     'job:  %s' % ' '.join(job),
                     'return code: %s' % result.returncode,
@@ -201,13 +160,20 @@ def watch(email, timeout, capture, heartbeat, passthrough, check_stdout, lock_fi
                 body.append('stdout\n======\n%s' % result.stdout)
             if result.stderr:
                 body.append('stderr\n======\n%s' % result.stderr)
-            msg = message % (
-                ','.join(email),
-                'job failed:  %s' % job[0].split('/')[-1],
-                '\n\n'.join(body),
-                )
-            mail(mail_server, 25, msg)
-            syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
+            if email:
+                print('error encountered, sending mail')
+                failed = True
+                msg = message % (
+                    ','.join(email),
+                    'job failed:  %s' % job[0].split('/')[-1],
+                    '\n\n'.join(body),
+                    )
+                mail(mail_server, 25, msg)
+                syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
+            else:
+                syslog(LOG_INFO, '[from %s] failed' % ppid)
+                print('\n\n'.join(body), file=stderr)
+                sys.exit(result.returncode or -1, 'job failed')
         else:
             if heartbeat:
                 print('sending heartbeat')
@@ -367,6 +333,45 @@ def check_syslog():
 
 
 # supporting routines
+def get_lock(lock, lock_file, timeout):
+    lock_file = PidLockFile(lock_file)
+    if lock == 'quit':
+        # get the lock or quit
+        try:
+            lock_file.acquire(timeout=-1)
+        except AlreadyLocked:
+            raise LockError('previous job(s) still running')
+    elif lock == 'wait':
+        # wait for lock, quit after timeout if unable to get lock
+        try:
+            lock_file.acquire(timeout=timeout)
+        except AlreadyLocked:
+            raise LockError('previous job(s) still running after timeout')
+    elif lock == 'kill':
+        lock_file.is_stale(timeout=1)
+        orgpid = lock_file.stored_pid
+        try:
+            lock_file.acquire(timeout=timeout)
+        except AlreadyLocked:
+            actpid = lock_file.read_pid()
+            if orgpid is not None and orgpid != actpid:
+                raise LockError('previous job ended, another job took its place')
+            else:
+                try:
+                    os.kill(actpid, 0)
+                except OSError:
+                    exc = sys.exc_info()[1]
+                    if exc.errno != errno.ESRCH:
+                        raise LockError('error killing previous job')
+                try:
+                    lock_file.acquire(timeout=random.randint(1, 5))
+                except LockError:
+                    raise LockError('unable to obtain lock')
+    else:
+        abort('unknown option for LOCK: %r' % lock)
+    lock_file.seal()
+    return lock_file
+
 def read(filename):
     if filename.endswith('.gz'):
         open_file = gzip.open
