@@ -40,7 +40,7 @@ class Formatter(logging.Formatter):
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-handler = logging.handlers.RotatingFileHandler('/var/log/cronaide.log', maxBytes=65536, backupCount=7)
+handler = logging.handlers.RotatingFileHandler('/var/log/cronaide.log', maxBytes=1073741824, backupCount=7)
 handler.setFormatter(Formatter('%(asctime)s %(pid)d %(name)s %(levelname)s: %(message)s'))
 logger.addHandler(handler)
 
