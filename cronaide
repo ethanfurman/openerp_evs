@@ -116,11 +116,11 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
     if not email and (capture or heartbeat):
         abort('if CAPTURE or HEARTBEAT is specified then EMAIL must also be specified')
     if lock_file or lock:
-        logger.debug('lock: %s', lock)
+        logger.info('lock: %s', lock)
         if lock_file is None:
             lock_file = script_commands[script_command_name].__scription__['lock_file']._script_default
         lock_file = lock_file.replace('${job-name}', Path(job[0]).filename)
-        logger.debug('lock-file: %s', lock_file)
+        logger.info('lock-file: %s', lock_file)
     ppid = os.getppid()
     openlog('AIDE', LOG_PID, LOG_CRON)
     failed = False
@@ -148,6 +148,8 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
                     sys.exit(-1, exc.args[0])
             else:
                 exit.push(lock_file)
+                logger.info('lock obtained for PID: %d', lock_file.read_pid())
+        logger.info('running job: %s', ' '.join(job))
         result = Execute(job, timeout=job_timeout)
         stop = time()
         elapsed = stop - start
@@ -200,9 +202,9 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
         if passthrough or (failed and not email):
             print('relaying job output')
             if result.stdout:
-                print(result.stdout, verbose=0)
+                print(result.stdout, verbose=0, end='')
             if result.stderr:
-                print(result.stderr, file=sys.stderr)
+                print(result.stderr, end='', file=sys.stderr)
             sys.exit(result.returncode)
     sys.exit(0)
 
