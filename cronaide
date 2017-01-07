@@ -38,13 +38,23 @@ class Formatter(logging.Formatter):
         record.pid = os.getpid()
         return logging.Formatter.format(self, record)
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
-handler = logging.handlers.RotatingFileHandler('/var/log/cronaide.log', maxBytes=1073741824, backupCount=7)
-handler.setFormatter(Formatter('%(asctime)s %(pid)d %(name)s %(levelname)s: %(message)s'))
-logger.addHandler(handler)
-
 # API
+
+@Script(
+        log=Spec('logging level to use', OPTION, abbrev=None, default='INFO', type=u.upper),
+        log_file=Spec('file to log to', OPTION, abbrev=None, default='/var/log/cronaide'),
+        )
+def main(log, log_file):
+    global logger
+    if log:
+        logger = logging.getLogger()
+        logger.setLevel(getattr(logging, log))
+        handler = logging.handlers.RotatingFileHandler(log_file, maxBytes=1073741824, backupCount=7)
+        handler.setFormatter(Formatter('%(asctime)s %(pid)d %(name)s %(levelname)s: %(message)s'))
+        logger.addHandler(handler)
+    else:
+        logger = lambda *a, **kw: 0
+
 
 @Command(
         email=('Who to send a test mail to.',),
@@ -150,7 +160,17 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
                 exit.push(lock_file)
                 logger.info('lock obtained for PID: %d', lock_file.read_pid())
         logger.info('running job: %s', ' '.join(job))
-        result = Execute(job, timeout=job_timeout)
+        result = Job(job)
+        if lock_file:
+            lock_file.seal(result.pid)
+        try:
+            result.communicate(timeout=job_timeout)
+        except TimeoutError:
+            pass
+        finally:
+            result.close()
+        if lock_file:
+            lock_file.release()
         stop = time()
         elapsed = stop - start
         msg = None
@@ -367,7 +387,6 @@ def get_lock(lock, lock_file, timeout):
                     raise LockError('unable to obtain lock')
     else:
         abort('unknown option for LOCK: %r' % lock)
-    lock_file.seal()
     return lock_file
 
 def read(filename):
