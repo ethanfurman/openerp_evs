@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python
 """
 tree view of file system:
 
@@ -44,8 +44,6 @@ def tree(path, include_files, omit_dirs, hidden, links, depth, time_it=False, _p
             files = []
         if omit_dirs:
             dirs[:] = [d for d in dirs if d not in omit_dirs]
-        if not links:
-            dirs[:] = [d for d in dirs if not d.islink()]
         if not hidden:
             files[:] = [f for f in files if not f.startswith('.')]
             dirs[:] = [d for d in dirs if not d.startswith('.')]
@@ -57,19 +55,23 @@ def tree(path, include_files, omit_dirs, hidden, links, depth, time_it=False, _p
         if dirs:
             last_dir = dirs.pop()
         for file in files:
-            print(_prefix, '|-- ', file, sep='', verbose=0)
+            link = ('', ' [l]')[(current/file).islink()]
+            print(_prefix, '|-- ', file, link, sep='', verbose=0)
         if last_file:
-            print(_prefix, '`-- ', last_file, sep='', verbose=0)
-        if (files or last_file) and dirs:
-            print(_prefix, '|', sep='', verbose=0)
+            link = ('', ' [l]')[(current/last_file).islink()]
+            print(_prefix, '`-- ', last_file, link, sep='', verbose=0)
         for dir in dirs:
-            print(_prefix, '|-- ', dir, '/', sep='', verbose=0)
-            if depth is None or depth >= 0:
-                tree(current/dir, include_files, omit_dirs, hidden, links, depth=depth, _prefix=_prefix+'|  ')
+            link = ('', ' [l]')[(current/dir).islink()]
+            print(_prefix, '|-- ', dir, '/', link, sep='', verbose=0)
+            if links or not (current/dir).islink():
+                if depth is None or depth >= 0:
+                    tree(current/dir, include_files, omit_dirs, hidden, links, depth=depth, _prefix=_prefix+'|  ')
         if last_dir:
-            print(_prefix, '`-- ', last_dir, '/', sep='', verbose=0)
-            if depth is None or depth >= 0:
-                tree(current/last_dir, include_files, omit_dirs, hidden, links, depth=depth, _prefix=_prefix+'   ')
+            link = ('', '[l]')[(current/last_dir).islink()]
+            print(_prefix, '`-- ', last_dir, '/', link, sep='', verbose=0)
+            if links or not (current/last_dir).islink():
+                if depth is None or depth >= 0:
+                    tree(current/last_dir, include_files, omit_dirs, hidden, links, depth=depth, _prefix=_prefix+'   ')
         dirs[:] = []
     if time_it:
         end = time()
