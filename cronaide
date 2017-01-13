@@ -41,8 +41,8 @@ class Formatter(logging.Formatter):
 # API
 
 @Script(
-        log=Spec('logging level to use', OPTION, abbrev=None, default='INFO', type=u.upper),
-        log_file=Spec('file to log to', OPTION, abbrev=None, default='/var/log/cronaide'),
+        log=Spec('logging level to use', OPTION, abbrev=None, force_default='INFO', type=u.upper),
+        log_file=Spec('file to log to', OPTION, abbrev=None, force_default='/var/log/cronaide.log'),
         )
 def main(log, log_file):
     global logger
@@ -169,8 +169,6 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
             pass
         finally:
             result.close()
-        if lock_file:
-            lock_file.release()
         stop = time()
         elapsed = stop - start
         msg = None
