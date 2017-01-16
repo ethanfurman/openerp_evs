@@ -18,11 +18,11 @@ def main():
 
 @Command()
 def fnx_pull_sds_docs():
-    lock = PidLockFile('/var/run/' + script_name + '/pids')
+    lock = PidLockFile('/var/run/' + script_name + '.pid')
     try:
         lock.seal()
     except AlreadyLocked:
-        print(script_name, 'defer to', lock.read_pid(), verbose=0)
+        print('%s: defer to %d' % (script_name, lock.read_pid()), verbose=0)
         raise SystemExit
     try:
         config = OrmFile('/etc/openerp/fnx.ini', section='network')
