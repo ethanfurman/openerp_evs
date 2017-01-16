@@ -1,0 +1,85 @@
+#!/usr/bin/python2.7
+"""
+Utility to copy postgres/openerp backups to the network, and
+copy FIS data from the network.
+"""
+from __future__ import print_function
+from antipathy import Path
+from scription import *
+import re
+
+@Script()
+def main():
+    global config
+    config = OrmFile('/etc/openerp/fnx.ini', types={'_path':Path})
+
+@Command()
+def backups():
+    """
+    copy backup from virtual machine to host
+
+    source files from postgres.daily to:
+    - network.daily_backup
+    - network.monthly_backup
+    """
+    daily_files = [f for f in config.postgres.daily.glob('*') if re.search('\d{4}-\d{2}-\d{2}', f)]
+    command = 'rsync -a %s %s' % (' '.join(daily_files), config.network.daily_backup)
+    if script_verbosity:
+        command += ' -v'
+    print(command, verbose=1)
+    job = Execute(command, pty=True, password=config.network.pw)
+    print(job.stdout, verbose=1)
+    if job.returncode:
+        error(job.stderr)
+        raise SystemExit(job.returncode)
+    monthly_files = [f for f in config.postgres.daily.glob('*') if re.search('\d{4}-\d{2}-01', f)]
+    if not monthly_files:
+        return
+    command = 'rsync -a %s %s' % (' '.join(monthly_files), config.network.monthly_backup)
+    if script_verbosity:
+        command += ' -v'
+    print(command, verbose=1)
+    job = Execute(command, pty=True, password=config.network.pw)
+    print(job.stdout, verbose=1)
+    if job.returncode:
+        error(job.stderr)
+        raise SystemExit(job.returncode)
+
+@Command()
+def fis():
+    """
+    update FIS files from host virtual machine
+
+    copy newer files from network.fis_data to /FIS/data and
+    freshen the global FIS_data.tar.gz file
+    """
+    output = []
+    command = ( 'rsync -a {host}:'
+                ' :{path}/S????'
+                ' :{path}/S?????'
+                ' :{path}/S??????'
+                ' /FIS/data/').format(
+                        host=config.network.fis_data_host,
+                        path=config.network.fis_data_path,
+                        )
+    if script_verbosity:
+        command += ' -v'
+    print(command, verbose=1)
+    job = Execute(command, pty=True, password=config.network.pw, timeout=3600)
+    output.extend([command, job.stderr, job.stdout])
+    print(job.stdout, verbose=1)
+    if job.returncode:
+        error('\n-----------------\n'.join(output))
+        raise SystemExit(job.returncode)
+    command = 'chown -R openerp: /FIS'
+    print(command, verbose=1)
+    job = Execute(command, timeout=300)
+    output.extend([command, job.stderr, job.stdout])
+    print(job.stdout, verbose=1)
+    if job.returncode:
+        error('\n-----------------\n'.join(output))
+        raise SystemExit(job.returncode)
+    print('chmod 440 /FIS/data/*', verbose=1)
+    Path('/FIS/data/').chmod(0o440, '*')
+
+Run()
