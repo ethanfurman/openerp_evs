@@ -158,11 +158,12 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
                     sys.exit(-1, exc.args[0])
             else:
                 exit.push(lock_file)
-                logger.info('lock obtained for PID: %d', lock_file.read_pid())
+                logger.info('lock obtained')
         logger.info('running job: %s', ' '.join(job))
         result = Job(job)
         if lock_file:
             lock_file.seal(result.pid)
+            logger.info('lock sealed for PID: %d', result.pid)
         try:
             result.communicate(timeout=job_timeout)
         except TimeoutError:
