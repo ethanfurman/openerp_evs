@@ -17,6 +17,8 @@ PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
 PGDUMPALLCMD = '%(pg_dumpall)s %%(port)s --file=%%(filename)s --globals-only' % settings
 DAILY_STORAGE = Path(settings.daily)
 MONTHLY_STORAGE = Path(settings.monthly)
+DAILY_LIMIT = settings.daily_limit
+MONTHLY_LIMIT = settings.monthly_limit
 TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % settings
 TARDISPLAY = '%(tar)s --list --file %%(target)s' % settings
 TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % settings
@@ -128,7 +130,8 @@ def backup(dbs, id, dst):
             print('  backup::5', verbose=2)
             tgz_file.copy(MONTHLY_STORAGE)
             print('  backup::6', verbose=2)
-        _remove_excess(DAILY_STORAGE)
+        _remove_excess(DAILY_STORAGE, DAILY_LIMIT)
+        _remove_excess(MONTHLY_STORAGE, MONTHLY_LIMIT)
     else:
         print('  backup::7', verbose=2)
         tgz_file.chown(*ACTUAL_IDS)
@@ -430,16 +433,15 @@ def _psql(cmd):
             raise Exception('\n'.join(lines))
     return result.stdout
 
-def _remove_excess(storage):
+def _remove_excess(storage, limit):
     """
-    keep 60 days worth of our backups
+    keep LIMIT days worth of our backups
     """
     try:
         found = storage.glob('*_pg91.tar.gz')
-        if len(found) > 60:
-            found.sort(reverse=True)
-            for target in found[60:]:
-                target.remove()
+        found.sort(reverse=True)
+        for target in found[limit:]:
+            target.remove()
     except:
         print(sys.exc_info(), file=stderr)
         raise
