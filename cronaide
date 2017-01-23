@@ -197,7 +197,7 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
                 print('\n\n'.join(body), file=stderr)
                 sys.exit(result.returncode or -1, 'job failed')
         else:
-            if heartbeat:
+            if heartbeat and not capture:
                 print('sending heartbeat')
                 msg = message % (
                     ','.join(email),
@@ -205,7 +205,7 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
                     'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
                     )
                 mail(mail_server, 25, msg)
-            if capture and result.stdout:
+            if capture and (heartbeat or result.stdout):
                 print('catch and release')
                 msg = message % (
                     ','.join(email),
