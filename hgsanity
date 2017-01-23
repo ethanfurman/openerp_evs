@@ -7,7 +7,6 @@ from scription import _namespace as NS
 
 import ast
 import os
-import py_compile
 import re
 import traceback
 try:
@@ -19,9 +18,10 @@ except ImportError:
 
 
 @Command(
+        pyflakes=Spec('enable pyflakes checks (if available)', FLAG, envvar='PYFLAKES'),
         files=Spec('files to check for syntax errors', OPTION, type=Path),
         )
-def hgsanity(*files):
+def hgsanity(pyflakes=True, *files):
     "Check for syntax errors, tab indentation, and trailing whitespace"
     if not files:
         print('getting hg info')
@@ -51,14 +51,14 @@ def hgsanity(*files):
         checker = filetype(path)
         if checker:
             print('  checking', path)
-            checker(path, notes)
+            checker(path, notes, pyflakes)
     if notes:
         notes.insert(0, '-' * 75 + '\n')
         notes.append('-' * 75)
         print(' ', '  '.join(notes), file=stderr)
         raise SystemExit(1)
 
-def check_python(path, notes):
+def check_python(path, notes, lint):
     "path is the file to check, notes is a list to update with problems"
     with open(path) as f:
         data = f.read()
@@ -101,7 +101,7 @@ def check_python(path, notes):
                     lastfile = path
                 notes.append('%s:%d: trailing whitespace\n' % (filename, i))
         # run through pyflakes if available
-        if Flakes is not None:
+        if lint and Flakes is not None:
             reporter = Reporter(notes, notes)
             Flakes(data, path, reporter=reporter)
 
