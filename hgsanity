@@ -105,7 +105,7 @@ def check_python(path, notes, lint):
             reporter = Reporter(notes, notes)
             Flakes(data, path, reporter=reporter)
 
-def check_xml(path, notes):
+def check_xml(path, notes, _):
     "path is the file to check, notes is a list to update with problems"
     with open(path) as f:
         data = f.read()
