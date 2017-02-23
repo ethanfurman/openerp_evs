@@ -2,23 +2,17 @@
 from __future__ import print_function
 
 from antipathy import Path
-from mercurial.ui import ui
 from scription import *
-from scription import _namespace as NS, echo, error
 
-import ast
 import grp
-import os
-import py_compile
 import pwd
-import traceback
 
 @Command(
         repo=Spec('root directory of repo', type=Path),
         )
 def set_owner_of(repo):
     "sets the root directory owner as owner of all sub-files/directories"
-    hg = extract_hg()
+    abort('testing')
     stat = repo.stat()
     uid = stat.st_uid
     gid = stat.st_gid
@@ -29,14 +23,14 @@ def set_owner_of(repo):
     error(job.stderr, end='')
     raise SystemExit(job.returncode)
 
-def extract_hg():
-    ns = NS()
-    ns.names = []
-    for k, v in os.environ.items():
-        if k.startswith('HG_'):
-            name = k[3:].lower()
-            ns.names.append(name)
-            ns[name] = v
-    return ns
+@Command(
+        repo=Spec('root directory of repo', type=Path),
+        )
+def add_group_write_to(repo):
+    "adds the group write permission bit"
+    job = Execute('chmod -R g+w')
+    echo(job.stdout, end='')
+    error(job.stderr, end='')
+    raise SystemExit(job.returncode)
 
 Main()
