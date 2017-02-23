@@ -28,7 +28,7 @@ def set_owner_of(repo):
         )
 def add_group_write_to(repo):
     "adds the group write permission bit"
-    job = Execute('chmod -R g+w')
+    job = Execute('chmod -R g+w %s' % repo)
     echo(job.stdout, end='')
     error(job.stderr, end='')
     raise SystemExit(job.returncode)
