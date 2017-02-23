@@ -4,7 +4,6 @@ from __future__ import print_function, unicode_literals
 from collections import defaultdict
 from itertools import cycle
 from scription import *
-from scription import echo
 from VSS.BBxXlate import fisData
 from antipathy import Path
 import dbf
@@ -113,7 +112,7 @@ def record(filenum, which):
 @Command(
         filenum=Spec('file abbreviation or number to operate on', ),
         subset=Spec('subset template to match many records to', ),
-        code=Spec('code to match with template', type=lambda s: s and tuple(s.split(',') or s)),
+        code=Spec('code to match with template', force_default='', type=lambda s: s and tuple(s.split(',') or s)),
         fields=Spec('specific fields to display [default: all, counting starts with 0]', MULTI, type=int),
         dbf_name=Spec('dbf to create with data', OPTION),
         )
@@ -264,7 +263,7 @@ def tables():
 @Command(
         filenum=Spec('file abbreviation or number to operate on', ),
         subset=Spec('subset template to match many records to', ),
-        code=Spec('code to match with template', type=lambda s: s and tuple(s.split(',') or s)),
+        code=Spec('code to match with template', force_default='', type=lambda s: s and tuple(s.split(',') or s)),
         fields=Spec('specific fields to display [default: all, counting starts with 0]', MULTI, type=int),
         )
 def values(filenum, subset, code, fields):
