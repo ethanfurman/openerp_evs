@@ -52,9 +52,10 @@ def fis():
     """
     update FIS files from host virtual machine
 
-    copy newer files from network.fis_data to /FIS/data and
-    freshen the global FIS_data.tar.gz file
+    copy newer files from network.fis_data to /FIS/data
     """
+    if config.network.get('fis_data_host') is None:
+        abort('canonical fis data host not configured')
     output = []
     command = ( 'rsync -a {host}:'
                 ' :{path}/{pre}????'
