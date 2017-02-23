@@ -57,12 +57,13 @@ def fis():
     """
     output = []
     command = ( 'rsync -a {host}:'
-                ' :{path}/S????'
-                ' :{path}/S?????'
-                ' :{path}/S??????'
+                ' :{path}/{pre}????'
+                ' :{path}/{pre}?????'
+                ' :{path}/{pre}??????'
                 ' /FIS/data/').format(
                         host=config.network.fis_data_host,
                         path=config.network.fis_data_path,
+                        pre=config.network.fis_data_prefix,
                         )
     if script_verbosity:
         command += ' -v'
