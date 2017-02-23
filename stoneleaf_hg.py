@@ -7,7 +7,6 @@ def update_owner(ui, repo, **kwds):
     url = repo.url()
     if url.startswith('file:'):
         home = url[5:]
-        print 'using home of', repr(home)
         job = Execute('/usr/local/bin/hgupdate set-owner-of %s' % home)
         echo(job.stdout, end='')
         error(job.stderr, end='')
@@ -20,7 +19,6 @@ def update_permissions(ui, repo, **kwds):
     url = repo.url()
     if url.startswith('file:'):
         home = url[5:]
-        print 'using home of', repr(home)
         job = Execute('/usr/local/bin/hgupdate add-group-write-to %s' % home)
         echo(job.stdout, end='')
         error(job.stderr, end='')

@@ -12,7 +12,6 @@ import pwd
         )
 def set_owner_of(repo):
     "sets the root directory owner as owner of all sub-files/directories"
-    abort('testing')
     stat = repo.stat()
     uid = stat.st_uid
     gid = stat.st_gid
