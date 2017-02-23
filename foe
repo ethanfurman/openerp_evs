@@ -22,6 +22,8 @@ def backups():
     - network.daily_backup
     - network.monthly_backup
     """
+    if config.network.role != 'master':
+        abort('unable to move backups from non-master machine')
     daily_files = [f for f in config.postgres.daily.glob('*') if re.search('\d{4}-\d{2}-\d{2}', f)]
     command = 'rsync -a %s %s' % (' '.join(daily_files), config.network.daily_backup)
     if script_verbosity:
