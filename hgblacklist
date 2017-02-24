@@ -4,12 +4,8 @@ from __future__ import print_function
 from antipathy import Path
 from mercurial.ui import ui
 from scription import *
-from scription import _namespace as NS
 
-import ast
 import os
-import py_compile
-import traceback
 
 @Command(
         )
@@ -38,7 +34,7 @@ def hgblacklist():
         raise SystemExit(1)
 
 def extract_hg():
-    ns = NS()
+    ns = NameSpace()
     ns.names = []
     for k, v in os.environ.items():
         if k.startswith('HG_'):

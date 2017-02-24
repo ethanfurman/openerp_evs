@@ -3,7 +3,6 @@ from __future__ import print_function
 
 from antipathy import Path
 from scription import *
-from scription import _namespace as NS
 
 import ast
 import os
@@ -132,7 +131,7 @@ def check_xml(path, notes, _):
 
 
 def extract_hg():
-    ns = NS()
+    ns = NameSpace()
     ns.names = []
     for k, v in os.environ.items():
         if k.startswith('HG_'):
