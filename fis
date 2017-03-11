@@ -4,15 +4,43 @@ from __future__ import print_function, unicode_literals
 from collections import defaultdict
 from itertools import cycle
 from scription import *
-from VSS.BBxXlate import fisData
+from VSS.BBxXlate import fisData as fd
+from VSS.BBxXlate.bbxfile import TableError
 from antipathy import Path
 import dbf
 import random
 import re
+import sys
 
 SOURCE = Path('/var/fis/production/')
 ARCHIVE = Path('/var/openerp/archive/production/')
 ERRORS = Path('/var/openerp/archive/production/error')
+
+
+@Command(
+        start=Spec('where to start checking', OPTION),
+        )
+def integrity_check(start=1):
+    "check tables for key/record mismatches"
+    i = start - 1
+    while 'checking more tables':
+        if i > 400:
+            break
+        i += 1
+        try:
+            table = fd.fisData(i)
+        except TableError:
+            cls, exc, tb = sys.exc_info()
+            # import traceback
+            # traceback.print_tb(tb)
+            error('%10s  [%3d]:  %s' % (exc.filename, i, exc.__class__.__name__))
+        except KeyError:
+            pass
+        else:
+            if table.corrupted:
+                error('%10s  [%3d]: %7d records,  %4d corrupted' % (table.filename, i, len(table), table.corrupted))
+            else:
+                print('%10s  [%3d]: %7d records' % (table.filename, i, len(table)))
 
 
 @Command(
@@ -28,12 +56,12 @@ def field_check(filenum, which):
             filenum = int(filenum)
         files = [filenum]
     else:
-        files = [k for k in fisData.tables if isinstance(k, (int, long))]
+        files = [k for k in fd.tables if isinstance(k, (int, long))]
     for filenum in files:
         print('file: %s' % (filenum,), end=' ', verbose=0)
         try:
-            table = fisData.fisData(filenum)
-        except fisData.TableError, exc:
+            table = fd.fisData(filenum)
+        except TableError, exc:
             print('<%s>' % exc.__doc__, verbose=0)
             continue
         print(table.datamap)
@@ -70,7 +98,7 @@ def field_check(filenum, which):
         )
 def query(table, code, field):
     key = table_keys.get(table)
-    fis_table = fisData.fisData(table, keymatch=key)
+    fis_table = fd.fisData(table, keymatch=key)
     if not field:
         print(fis_table[code], verbose=0)
     else:
@@ -98,7 +126,7 @@ def query(table, code, field):
 def record(filenum, which):
     if filenum.isdigit():
         filenum = int(filenum)
-    table = fisData.fisData(filenum)
+    table = fd.fisData(filenum)
     if which == 'last':
         record = table.values()[-1]
     elif which == 'random':
@@ -119,7 +147,7 @@ def record(filenum, which):
 def records(filenum, subset, code, fields, dbf_name):
     if filenum.isdigit():
         filenum = int(filenum)
-    fis_table = fisData.fisData(filenum, subset=subset)
+    fis_table = fd.fisData(filenum, subset=subset)
     records = [v for k, v in fis_table.get_subset(code)]
     used_fields = []
     if records:
@@ -201,7 +229,7 @@ def records(filenum, subset, code, fields, dbf_name):
 def schema(filenum, output):
     if filenum.isdigit():
         filenum = int(filenum)
-    table = fisData.tables[filenum]
+    table = fd.tables[filenum]
     if output == 'dump':
         max_width = 0
         for field in table['fields']:
@@ -253,10 +281,10 @@ def schema(filenum, output):
 @Command()
 def tables():
     "list FIS tables"
-    keys = [k for k in fisData.tables.keys() if isinstance(k, (int,long))]
+    keys = [k for k in fd.tables.keys() if isinstance(k, (int,long))]
     keys.sort()
     for k in keys:
-        t = fisData.tables[k]
+        t = fd.tables[k]
         echo('%4d: %s%s' % (k, t['name'], t['desc']))
 
 
@@ -273,8 +301,8 @@ def values(filenum, subset, code, fields):
     fields = [i-1 for i in fields]
     if filenum.isdigit():
         filenum = int(filenum)
-    fis_table = fisData.fisData(filenum, subset=subset)
-    table_spec = fisData.tables[filenum]
+    fis_table = fd.fisData(filenum, subset=subset)
+    table_spec = fd.tables[filenum]
     table_fields = []
     for i, row in enumerate(table_spec['fields']):
         if i not in fields:
