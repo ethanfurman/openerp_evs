@@ -127,6 +127,7 @@ def record(filenum, which):
     if filenum.isdigit():
         filenum = int(filenum)
     table = fd.fisData(filenum)
+    print('using file', table.filename)
     if which == 'last':
         record = table.values()[-1]
     elif which == 'random':
@@ -148,12 +149,13 @@ def records(filenum, subset, code, fields, dbf_name):
     if filenum.isdigit():
         filenum = int(filenum)
     fis_table = fd.fisData(filenum, subset=subset)
+    print('using file', fis_table.filename)
     records = [v for k, v in fis_table.get_subset(code)]
     used_fields = []
     if records:
         # get field defs now, may be needed for dbf creation
         record = records[0]
-        print('widths:', record._widths)
+        print('widths:', record._widths, verbose=2)
         max_data_width = record._width
         max_spec_width = 0
         field_widths = []
@@ -170,14 +172,14 @@ def records(filenum, subset, code, fields, dbf_name):
                 field_widths.append(width)
                 field_name = convert_name(name, 10)
                 if field_name in dbf_names:
-                    print('duplicate name:', field_name)
+                    print('duplicate name:', field_name, verbose=2)
                     prior = dbf_names.index(field_name)
-                    print('  found at:', prior)
+                    print('  found at:', prior, verbose=2)
                     alt_name = convert_name(name, 9)
                     dbf_names[prior] = alt_name
                     dbf_types[prior] = dbf_types[prior].replace(field_name, alt_name)
-                    print('  reset to:', dbf_names[prior])
-                    print('  and:     ', dbf_types[prior])
+                    print('  reset to:', dbf_names[prior], verbose=2)
+                    print('  and:     ', dbf_types[prior], verbose=2)
                     field_name = alt_name + '2'
                 dbf_names.append(field_name)
                 name = convert_name(name)
@@ -205,15 +207,16 @@ def records(filenum, subset, code, fields, dbf_name):
                     else:
                         lines.append('%5d | %*s | %*s | %s' % (i, -max_spec_width, spec, max_data_width, data, comment))
                 if not dbf_name and lines:
-                    print('\n'.join(lines), verbose=0)
+                    echo('\n'.join(lines))
             if dbf_name:
                 data = []
-                for i, cnv in used_fields:
+                for i, item in enumerate(used_fields):
+                    cnv = item[1]
                     data.append(cnv(field_data[i]))
-                print('field data:', data)
+                print('field data:', data, verbose=2)
                 table.append(tuple(data))
             if not dbf_name:
-                print(verbose=0)
+                echo()
     except Exception:
         import traceback
         traceback.print_exc()
