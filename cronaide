@@ -18,7 +18,7 @@ import logging.handlers
 import os
 import random
 import re
-import traceback as tb
+import traceback
 import sys
 
 try:
@@ -409,15 +409,25 @@ def is_cronaide(line):
 class BreakLoop(Exception):
     pass
 
+def emergency_mail(body):
+    error('mailing to:', ','.join(notify_list))
+    mail(
+        mail_server,
+        25,
+        message % ('ethan@stoneleaf.us', ' '.join(sys.argv), body),
+        # message % (','.join(notify_list), ' '.join(sys.argv), body),
+        )
+
+
 if __name__ == '__main__':
     try:
         Run()
-    except Exception:
-        body = tb.format_exc()
-        print('mailing to:', ','.join(notify_list))
-        mail(
-            mail_server,
-            25,
-            message % (','.join(notify_list), ' '.join(sys.argv), body),
-            )
+    except:
+        cls, exc, tb = sys.exc_info()
+        if isinstance(exc, SystemExit):
+            exit_code = exc.args[-1]
+            if exit_code == Exit.ScriptionError:
+                emergency_mail("error with cronaide parameters:\n\n\%s" % script_module['script_abort_message'])
+        else:
+            emergency_mail(traceback.format_exc())
         raise
