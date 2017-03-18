@@ -1,0 +1,33 @@
+#!/usr/bin/python
+
+from scription import *
+from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON
+from time import sleep
+
+@Command(
+        wait=Spec('how long to simulate activity', type=int),
+        )
+def locks(wait):
+    openlog('CRON-TEST-LOCKS', LOG_PID, LOG_CRON)
+    syslog(LOG_INFO, 'starting')
+    sleep(wait)
+    syslog(LOG_INFO, 'ending')
+    closelog
+
+@Command(
+        out=Spec('write to stdout', FLAG),
+        err=Spec('write to stderr', FLAG),
+        include_error= Spec('include "ERROR" in stdout', FLAG),
+        returncode=Spec('exit code to return', OPTION, default=0),
+        )
+def test_watch(out, err, include_error, returncode):
+    if out:
+        echo('Humpety Dumpty sat on a wall')
+    if err:
+        error('Humpty Dumpty had a great fall!')
+    if include_error:
+        echo("ERROR:\nAll the kings horses and all the kings men\ncouldn't put Humpty together again...")
+    if returncode is not None:
+        return returncode
+
+Main()
