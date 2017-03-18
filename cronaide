@@ -1,4 +1,6 @@
 #!/usr/bin/env python2.7
+
+# imports
 from __future__ import print_function
 
 from antipathy import Path
@@ -21,6 +23,7 @@ import re
 import traceback
 import sys
 
+# load configuration file
 try:
     execfile('/etc/cronaide.conf')
 except:
@@ -32,11 +35,6 @@ except:
             %%s""" % (getfqdn() or 'nowhere.invalid'))
     mail_server = 'localhost'
     notify_list = ['root@localhost']
-
-class Formatter(logging.Formatter):
-    def format(self, record):
-        record.pid = os.getpid()
-        return logging.Formatter.format(self, record)
 
 # API
 
@@ -93,6 +91,7 @@ def self_test():
 
 @Command(
         email=Spec('Who to send job output to.', MULTI, force_default=notify_list),
+        email_subject=Spec('subject to use for email (if any)', OPTION, ('subject', 's')),
         job_timeout=Spec('allowed time for job OR time to wait for lock (in seconds)', OPTION, force_default=3600),
         capture=('Send all output to EMAIL', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
@@ -113,7 +112,7 @@ def self_test():
         job=('job to run', REQUIRED, ),
         )
 @Alias('cronaide')
-def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, lock_file, lock_timeout, lock, *job):
+def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, check_stdout, lock_file, lock_timeout, lock, *job):
     """monitor JOB, sending results/status to EMAIL
 
     By default, a locking pid file is used with an immediate timeout, and
@@ -147,7 +146,7 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
                 if email:
                     msg = message % (
                         ','.join(email),
-                        'job failed:  %s' % job[0].split('/')[-1],
+                        'job failed:  %s' % (email_subject or job[0].split('/')[-1]),
                         exc.args[0],
                         )
                     mail(mail_server, 25, msg)
@@ -173,11 +172,12 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
         stop = time()
         elapsed = stop - start
         msg = None
+        body = [
+                'job:  %s' % ' '.join(job),
+                'return code: %s' % result.returncode,
+                'time to run: approximately %d minutes %d seconds' % divmod(elapsed, 60),
+                ]
         if (check_stdout and 'ERROR' in result.stdout) or result.returncode or result.stderr:
-            body = [
-                    'job:  %s' % ' '.join(job),
-                    'return code: %s' % result.returncode,
-                    ]
             if result.stdout:
                 body.append('stdout\n======\n%s' % result.stdout)
             if result.stderr:
@@ -187,7 +187,7 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
                 failed = True
                 msg = message % (
                     ','.join(email),
-                    'job failed:  %s' % job[0].split('/')[-1],
+                    'job failed:  %s' % (email_subject or job[0].split('/')[-1]),
                     '\n\n'.join(body),
                     )
                 mail(mail_server, 25, msg)
@@ -197,21 +197,22 @@ def watch(email, job_timeout, capture, heartbeat, passthrough, check_stdout, loc
                 print('\n\n'.join(body), file=stderr)
                 sys.exit(result.returncode or -1, 'job failed')
         else:
-            if heartbeat and not capture:
+            if heartbeat and (not capture or not result.stdout):
                 print('sending heartbeat')
                 msg = message % (
                     ','.join(email),
-                    'heartbeat: %s' % job[0].split('/')[-1],
-                    'job: %s\nran in: approximately %d seconds' % (' '.join(job), elapsed),
+                    'job heartbeat: %s' % (email_subject or job[0].split('/')[-1]),
+                    '\n\n'.join(body),
                     )
                 mail(mail_server, 25, msg)
             if capture and (heartbeat or result.stdout):
+                if result.stdout:
+                    body.append('stdout\n======\n%s' % result.stdout)
                 print('catch and release')
                 msg = message % (
                     ','.join(email),
-                    'job:  %s' % job[0].split('/')[-1],
-                    '%s\n\ntime to run\n===========\napproximately %d seconds\n\nstdout\n======\n%s' %
-                    (' '.join(job), elapsed, result.stdout),
+                    'job:  %s' % (email_subject or job[0].split('/')[-1]),
+                    '\n\n'.join(body),
                     )
                 mail(mail_server, 25, msg)
             if msg:
@@ -417,6 +418,11 @@ def emergency_mail(body):
         message % ('ethan@stoneleaf.us', ' '.join(sys.argv), body),
         # message % (','.join(notify_list), ' '.join(sys.argv), body),
         )
+
+class Formatter(logging.Formatter):
+    def format(self, record):
+        record.pid = os.getpid()
+        return logging.Formatter.format(self, record)
 
 
 if __name__ == '__main__':
