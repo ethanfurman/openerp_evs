@@ -94,28 +94,13 @@ def field_check(filenum, which):
 @Command(
         table=Spec('FIS table to query', type=int),
         code=Spec('code to search for', ),
-        field=Spec('specific fields to display [default: all, counting starts with 0]', MULTI, type=int),
+        fields=Spec('specific fields to display [default: all]', MULTI, type=int),
         )
-def query(table, code, field):
+def query(table, code, fields):
     key = table_keys.get(table)
     fis_table = fd.fisData(table, keymatch=key)
-    if not field:
-        print(fis_table[code], verbose=0)
-    else:
-        lines = []
-        record = fis_table[code]
-        name = value = 0
-        for i, row in enumerate(record.fieldlist):
-            if i in field:
-                name = max(len(row[3]), name)
-                value = max(len(str(record[row[3]])), value)
-        for i, row in enumerate(record.fieldlist):
-            if i in field:
-                if '$' in row[3]:
-                    lines.append('%5d | %*s | %*s | %s' % (i, -name, row[3], -value, record[row[3]], row[1]))
-                else:
-                    lines.append('%5d | %*s | %*s | %s' % (i, -name, row[3], value, record[row[3]], row[1]))
-        print('\n'.join(lines), verbose=0)
+    for line in format_record(fis_table[code], fields):
+        echo(line)
 
 
 @Command(
@@ -135,7 +120,8 @@ def record(filenum, which):
     else:
         record = table[which]
     print(record.rec)
-    print(record, verbose=0)
+    for line in format_record(record):
+        echo(line)
 
 
 @Command(
@@ -203,9 +189,9 @@ def records(filenum, subset, code, fields, dbf_name):
                     data = record[row[3]]
                     field_data.append(data)
                     if '$' in row[3]:
-                        lines.append('%5d | %*s | %*s | %s' % (i, -max_spec_width, spec, -max_data_width, data, comment))
+                        lines.append('%5d | %*s | %*s | %s' % (i+1, -max_spec_width, spec, -max_data_width, data, comment))
                     else:
-                        lines.append('%5d | %*s | %*s | %s' % (i, -max_spec_width, spec, max_data_width, data, comment))
+                        lines.append('%5d | %*s | %*s | %s' % (i+1, -max_spec_width, spec, max_data_width, data, comment))
                 if not dbf_name and lines:
                     echo('\n'.join(lines))
             if dbf_name:
@@ -318,10 +304,28 @@ def values(filenum, subset, code, fields):
     for name, spec, values in table_fields:
         print('%s:  ' % name, ', '.join([repr(v) for v in sorted(values)]), verbose=0)
 
+# helpers
 
 table_keys = {
     328: '10%s000010000',
     }
+
+def format_record(record, fields=None):
+    lines = []
+    name = value = 0
+    if not fields:
+        fields = range(len(record.fieldlist))
+    for i, row in enumerate(record.fieldlist):
+        if i in fields:
+            name = max(len(row[3]), name)
+            value = max(len(str(record[row[3]])), value)
+    for i, row in enumerate(record.fieldlist):
+        if i in fields:
+            if '$' in row[3]:
+                lines.append('%5d | %*s | %*s | %s' % (i+1, -name, row[3], -value, record[row[3]], row[1]))
+            else:
+                lines.append('%5d | %*s | %*s | %s' % (i+1, -name, row[3], value, record[row[3]], row[1]))
+    return lines
 
 def convert_name(name, max_len=50):
     name = name.lower()
