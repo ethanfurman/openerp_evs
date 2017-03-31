@@ -422,8 +422,7 @@ def emergency_mail(body):
     mail(
         mail_server,
         25,
-        message % ('ethan@stoneleaf.us', ' '.join(sys.argv), body),
-        # message % (','.join(notify_list), ' '.join(sys.argv), body),
+        message % (','.join(notify_list), ' '.join(sys.argv), body),
         )
 
 class Formatter(logging.Formatter):
