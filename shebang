@@ -3,7 +3,7 @@ rewrites the shebang line of evs scripts to start with the same
 interpreter that is running this script -- hence, no shebang line
 here, you must start with whichever python you desire
 
-the new scripts are written to the parent directory (/usr/local/bin
+the new scripts are written to the target directory (/usr/local/bin
 in most cases)
 
 also installs stoneleaf_hg.py into sys.path; order of preference:
@@ -17,14 +17,26 @@ import re
 import sys
 
 new_shebang = '#!' + sys.executable
+bins = (
+    Path('/usr/local/bin/'),
+    Path('/usr/local/sbin/'),
+    Path('/usr/bin/'),
+    Path('/usr/sbin/'),
+    Path('/bin/'),
+    Path('/sbin/'),
+    )
+
 for current, dirs, files in Path.walk('.'):
     dirs[:] = []
     for f in files:
-        if not ('..'/f).exists():
+        for b in bins:
+            if b.exists(f):
+                break
+        else:
             continue
         data = open(f).read()
         first_line, data = data.split('\n', 1)
-        fh = ('..'/f).open('w')
+        fh = b.open(f, 'w')
         if first_line[:2] != '#!' or 'python' not in first_line or 'suid-python' in first_line:
             print('%s: not changing shebang' % f)
             fh.write(first_line + '\n')
