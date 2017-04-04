@@ -14,7 +14,7 @@ import sys
 CONFIG = Path('/etc/openerp/fnx.ini')
 
 try:
-    settings = OrmFile(CONFIG, section='openerp')
+    settings = OrmFile(CONFIG)
 except Exception:
     print('WARNING: unable to process configfile; all parameters must be specified', verbose=0)
     HOST = ''
@@ -22,10 +22,10 @@ except Exception:
     DB = ''
     PW = ''
 else:
-    HOST = settings.host
-    USER = settings.user
-    DB = settings.db
-    PW = settings.pw
+    HOST = settings.openerp.host
+    USER = settings.openerp.user
+    DB = settings.openerp.db
+    PW = settings.openerp.pw
 
 @Script(
         host=('host where OpenERP instance is running', OPTION),
@@ -51,13 +51,31 @@ def main(host, db, user, pw):
     module.OE.conn = get_connection(hostname=HOST, database=DB, login=USER, password=PW)
 
 @Command(
+        src=Spec('network location of files', ),
+        dst=Spec('local path to store files', ),
+        )
+def sync(src, dst):
+    "synchronize files between SRC and DST"
+    result = Execute(
+            "rsync -auv --exclude .~lock* %s %s" % (src, dst),
+            password=settings.network.pw,
+            pty=True,
+            )
+    if result.stdout:
+        print(result.stdout, end='')
+    if result.stderr:
+        print(result.stderr, end='', file=stdout)
+    raise SystemExit(result.returncode)
+
+
+@Command(
         path=Spec('location of pdfs to sort and import', type=Path),
         progress=Spec('show progress visually', FLAG),
         id=Spec('id pattern to match', OPTION, type=unicode.upper),
         )
 def c_of_a(path, progress, id):
     '''
-    move and sort source pdfs into fnxfs file structure
+    copy, move, and sort source pdfs into fnxfs file structure
     '''
     # -- Documents/
     #    |-- ABC/
@@ -70,6 +88,7 @@ def c_of_a(path, progress, id):
     #    |-- QRS/
     #    |-- TUV/
     #    `-- WQYZ/
+    # rsync -auv --exclude '.~lock*' root@192.168.2.61:/mnt/virtualxp/JRA_Docs/. /home/JRA_Docs/.
     if id:
         print('looking in %s for files matching %s' % (path, id))
     else:
@@ -122,11 +141,11 @@ def c_of_a(path, progress, id):
         pdfs = target_dir.listdir()
         pdfs.sort()
         print('\nproduct', product.xml_id)
-        xaml_line = "%%p\n  %%a href='%s': %s"
+        xaml_line = "~p\n  ~a href='%s': %s"
         xaml_list = []
         for pdf in pdfs:
             xaml_list.append(xaml_line % ('/fnxfs'/base/sub/pdf.filename, pdf.filename))
-        xaml_doc = Xaml('\n'.join(xaml_list)).document.string()
+        xaml_doc = Xaml('\n'.join(xaml_list)).document.pages[0].string()
         product_product.write([product.id], {'c_of_a':xaml_doc})
 
 
@@ -153,8 +172,6 @@ fnx_root = Path('/var/openerp/fnxfs/')
 doc_root = Path('Documents')
 sds_root = doc_root/'Safety Data Sheets'
 cofa_root = doc_root/'Certificates of Analysis'
-
-config = OrmFile('/etc/openerp/fnx.ini', section='fnxfsd')
 
 cofa_primary_level = {
         'a': cofa_root/'ABC',
