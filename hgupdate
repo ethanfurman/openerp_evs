@@ -12,14 +12,18 @@ import pwd
         )
 def set_owner_of(repo):
     "sets the root directory owner as owner of all sub-files/directories"
+    print('setting owner of:', repo)
     stat = repo.stat()
     uid = stat.st_uid
     gid = stat.st_gid
+    print('to:', uid, gid)
     user = pwd.getpwuid(uid).pw_name
     group = grp.getgrgid(gid).gr_name
+    print('   ', user, group)
     job = Execute('chown -R %s:%s %s' % (user, group, repo))
     echo(job.stdout, end='')
     error(job.stderr, end='')
+    print('return code:', job.returncode)
     raise SystemExit(job.returncode)
 
 @Command(
@@ -27,9 +31,11 @@ def set_owner_of(repo):
         )
 def add_group_write_to(repo):
     "adds the group write permission bit"
+    print('adding write bit to', repo)
     job = Execute('chmod -R g+w %s' % repo)
     echo(job.stdout, end='')
     error(job.stderr, end='')
+    print('return code:', job.returncode)
     raise SystemExit(job.returncode)
 
 Main()
