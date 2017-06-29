@@ -2,10 +2,10 @@
 from __future__ import print_function
 
 from antipathy import Path
+from hg_tools import extract_hg
 from mercurial.ui import ui
 from scription import *
 
-import os
 
 @Command(
         )
@@ -13,7 +13,6 @@ def hgblacklist():
     "check that no blacklisted files are being committed"
     hg = extract_hg()
     repo = Path(hg.pending)
-    files = Execute('hg log -r %s --template {files}' % hg.node).stdout.split()
     cfg = ui()
     cfg.readconfig(repo/'.hg/hgrc')
     blacklist_cfg = cfg.configitems('blacklist')
@@ -24,7 +23,7 @@ def hgblacklist():
         else:
             abort('unknown setting in [blacklist] -> %s' % name)
     notes = []
-    for file in files:
+    for file in hg.files:
         if file in blacklisted:
             notes.append('blacklisted file: %s' % file)
     if notes:
@@ -32,15 +31,5 @@ def hgblacklist():
         notes.append('-' * 50)
         print(' ', '\n  '.join(notes), file=stderr)
         raise SystemExit(1)
-
-def extract_hg():
-    ns = NameSpace()
-    ns.names = []
-    for k, v in os.environ.items():
-        if k.startswith('HG_'):
-            name = k[3:].lower()
-            ns.names.append(name)
-            ns[name] = v
-    return ns
 
 Main()

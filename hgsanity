@@ -2,10 +2,10 @@
 from __future__ import print_function
 
 from antipathy import Path
+from hg_tools import extract_hg
 from scription import *
 
 import ast
-import os
 import re
 import traceback
 try:
@@ -27,13 +27,12 @@ def hgsanity(pyflakes=True, *files):
         hg = extract_hg()
         if not hg.names:
             abort('hgsanity should be called with filenames to check, or as an hg hook')
-        files = Execute('hg log -r %s --template {files}' % hg.node).stdout.split()
         repo = Path(hg.pending)
     else:
         print('no repo')
         repo = None
     notes = Notes()
-    for file in files:
+    for file in hg.files:
         if repo:
             path = repo / file
         else:
@@ -129,16 +128,6 @@ def check_xml(path, notes, _):
                 lastfile = path
             notes.append('%s: trailing whitespace in line %d\n' % (path, i))
 
-
-def extract_hg():
-    ns = NameSpace()
-    ns.names = []
-    for k, v in os.environ.items():
-        if k.startswith('HG_'):
-            name = k[3:].lower()
-            ns.names.append(name)
-            ns[name] = v
-    return ns
 
 def filetype(path):
     if path.ext == '.py' or path.ext == '' and 'python' in firstline(path):
