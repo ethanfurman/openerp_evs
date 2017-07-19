@@ -1,0 +1,52 @@
+#!/usr/bin/env python
+from __future__ import print_function
+
+from hg_tools import extract_hg, find_issues
+from scription import *
+
+
+@Command(
+        local=Spec('update local server', FLAG, envvar='LOCALSTORE'),
+        )
+def hgissuecheck(local):
+    "update any issues mentioned in commit message"
+    hg = extract_hg()
+    commit = hg.description
+    issues = find_issues(*(commit,))
+    # look for issue and task flags
+    for issue in issues:
+        # lop off issue #
+        commit = commit.rsplit('(', 1)[0].strip()
+        if issue.company is None:
+            error('currently ignoring %r' % (issue, ))
+            continue
+        commandline = []
+        if local:
+            commandline.extend([
+                '/opt/openerp/addons/project/scripts/status',
+                ])
+        else:
+            commandline.extend([
+                'ssh',
+                'ethan@openerp.sunridgefarms.com',
+                '/home/ethan/openerp/addons/project/scripts/status',
+                ])
+        commandline.extend([
+                'set',
+                issue.type,
+                str(issue.id),
+                'install',
+                '--note=%s' % (commit, )
+                ])
+        print('running --> ', ' '.join(commandline), verbose=2)
+        job = Execute(commandline)
+        if job.returncode or job.stderr:
+            output = '\n-------\n'.join([t.strip() for t in (job.stdout, job.stderr) if t])
+            error('==========', 'UNABLE TO UPDATE %r' % (issue, ), '------', commandline, output, '-------', sep='\n')
+            if get_response('--> continue?'):
+                error('--> skipping...', '==========', sep='\n')
+            else:
+                error('--> aborting...', '==========', sep='\n')
+                raise SystemExit(1)
+
+Main()
