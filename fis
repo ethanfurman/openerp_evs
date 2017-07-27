@@ -251,17 +251,17 @@ def schema(filenum, output, number):
         print('    %s - %s' % (table['name'], table['desc'].strip('-')), verbose=0)
         print('    """', verbose=0)
         lines = []
-        for field in table['fields']:
+        for i, field in enumerate(table['fields']):
             name, spec = field[1:4:2]
             comment = name
             name = convert_name(name)
-            lines.append((name, spec, comment))
+            lines.append((name, spec, i, comment))
         #calculate widths
-        max_name = max([len(n) for n, s, c in lines])
-        max_spec = max([len(s) for n, s, c in lines]) + 2
-        for name, spec, comment in lines:
+        max_name = max([len(n) for n, s, i, c in lines])
+        max_spec = max([len(s) for n, s, i, c in lines]) + 2
+        for name, spec, fld, comment in lines:
             if name:
-                print('    %-*s = %-*r     # %s' % (max_name, name, max_spec, spec, comment), verbose=0)
+                print('    %-*s = %-*r     # %3d: %s' % (max_name, name, max_spec, spec, fld, comment), verbose=0)
             else:
                 print(' ' * (max_name + max_spec + 11), '# %s %s' % (comment, spec), verbose=0)
     else:
