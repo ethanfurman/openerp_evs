@@ -12,9 +12,9 @@ import random
 import re
 import sys
 
-SOURCE = Path('/var/fis/production/')
-ARCHIVE = Path('/var/openerp/archive/production/')
-ERRORS = Path('/var/openerp/archive/production/error')
+# SOURCE = Path('/var/fis/production/')
+# ARCHIVE = Path('/var/openerp/archive/production/')
+# ERRORS = Path('/var/openerp/archive/production/error')
 
 
 @Command(
@@ -214,8 +214,9 @@ def records(filenum, subset, code, fields, dbf_name):
 @Command(
         filenum=Spec('file abbreviation or number to display', ),
         output=Spec('output type', choices=['dump','enum'], default='dump'),
+        number=Spec('number to use for enum output (when using an abbr for FILENUM)', OPTION, type=int),
         )
-def schema(filenum, output):
+def schema(filenum, output, number):
     if filenum.isdigit():
         filenum = int(filenum)
     table = fd.tables[filenum]
@@ -245,7 +246,7 @@ def schema(filenum, output):
             print('%3d  %s' % (i+1, display_field_num), name, spec, verbose=0)
             display_field_num = '  '
     elif output == 'enum':
-        print('class F%d(str, Enum):' % table['filenum'], verbose=0)
+        print('class F%d(str, Enum):' % (number or table['filenum']), verbose=0)
         print('    """', verbose=0)
         print('    %s - %s' % (table['name'], table['desc'].strip('-')), verbose=0)
         print('    """', verbose=0)
