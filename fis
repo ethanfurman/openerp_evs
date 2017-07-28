@@ -276,10 +276,20 @@ def schema(filenum, output, number):
 def tables():
     "list FIS tables"
     keys = [k for k in fd.tables.keys() if isinstance(k, (int,long))]
+    template = '%4d: %s%s'
+    numerical = True
+    if not keys:
+        # only alpha table names
+        keys = [k for k in fd.tables.keys()]
+        template = '%s: %s'
+        numerical = False
     keys.sort()
     for k in keys:
         t = fd.tables[k]
-        echo('%4d: %s%s' % (k, t['name'], t['desc']))
+        if numerical:
+            echo('%4d: %s%s' % (k, t['name'], t['desc']))
+        else:
+            echo('%-7s: %s%s' % (k, t['name'], t['desc']))
 
 
 @Command(
