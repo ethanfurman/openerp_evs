@@ -191,17 +191,13 @@ def records(filenum, subset, code, fields, dbf_name):
         for record in records:
             field_data = []
             for i, row in enumerate(fis_fields):
-                lines = []
-                if not fields or i in fields:
-                    comment, spec = row[1:4:2]
-                    data = record[row[3]]
-                    field_data.append(data)
-                    if '$' in row[3]:
-                        lines.append('%5d | %*s | %*s | %s' % (i+1, -max_spec_width, spec, -max_data_width, data, comment))
-                    else:
-                        lines.append('%5d | %*s | %*s | %s' % (i+1, -max_spec_width, spec, max_data_width, data, comment))
+                lines = format_record(record, fields)
                 if not dbf_name and lines:
                     echo('\n'.join(lines))
+                    try:
+                        raw_input('...')
+                    except KeyboardInterrupt:
+                        raise SystemExit(1)
             if dbf_name:
                 data = []
                 for i, item in enumerate(used_fields):
@@ -463,12 +459,15 @@ def format_record(record, fields=None):
     for i, row in enumerate(record.fieldlist):
         if i in fields:
             name_width = max(len(row[3]), name_width)
-            value_width = max(len(str(record[row[3]])), value_width)
+            value_width = max(len(str(record[row[3]]).replace('\0','').strip()), value_width)
+            print('field %d -> name width: %d   value width: %d' % (i, name_width, value_width), verbose=3)
+    print(verbose=3)
     for i, row in enumerate(record.fieldlist):
         if i in fields:
             value = record[row[3]]
             if isinstance(value, basestring):
-                value = value.replace('\0', '')
+                value = value.replace('\0', '').strip()
+            print('field %d -> %r' % (i, value), verbose=3)
             if '$' in row[3]:
                 lines.append('%5d | %*s | %*s | %s' % (i+1, -name_width, row[3], -value_width, value, row[1]))
             else:
