@@ -302,7 +302,7 @@ def update_openerp(database, customers, suppliers, vendors, carriers, employees,
     # if partner:
     #     partner_key %= partner
     state_recs = get_records(oe, 'res.country.state')
-    state_recs = dict([(r.name, (r.id, r.code, r.country_id.id)) for r in state_recs])
+    state_recs = dict([(r.name, (r.id, r.code, r.country_id[0])) for r in state_recs])
     country_recs = get_records(oe, 'res.country')
     country_recs_name = dict([(r.name, r.id) for r in country_recs])
     if customers:
