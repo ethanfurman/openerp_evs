@@ -590,7 +590,7 @@ def connect_oe(database, connection=[]):
                     database=database,
                     login='fis_daemon',
                     password=config.openerp.pw,
-                    host=config.openerp.host,
+                    hostname=config.openerp.host,
                     ))
     res_partner = connection[0].get_model('res.partner')
     return connection[0]
