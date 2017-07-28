@@ -288,11 +288,11 @@ def tables():
 
 @Command(
         database=('which database to update', ),
-        customers=('', FLAG),
-        suppliers=('', FLAG),
-        vendors=('', FLAG),
-        carriers=('', FLAG),
-        employees=('', FLAG),
+        customers=('', FLAG, None),
+        suppliers=('', FLAG, None),
+        vendors=('', FLAG, None),
+        carriers=('', FLAG, None),
+        employees=('', FLAG, None),
         )
 def update_openerp(database, customers, suppliers, vendors, carriers, employees):
     "update OpenERP from FIS data"
