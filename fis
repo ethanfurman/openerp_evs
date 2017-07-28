@@ -293,8 +293,9 @@ def tables():
         vendors=('', FLAG, None),
         carriers=('', FLAG, None),
         employees=('', FLAG, None),
+        contacts=('include contacts', FLAG, None),
         )
-def update_openerp(database, customers, suppliers, vendors, carriers, employees):
+def update_openerp(database, customers, suppliers, vendors, carriers, employees, contacts):
     "update OpenERP from FIS data"
     oe = connect_oe(database)
     partner_key = '10%s'
@@ -307,7 +308,7 @@ def update_openerp(database, customers, suppliers, vendors, carriers, employees)
     if customers:
         customer_codes = get_xml_id_map(oe, model='res.partner', module='F33')
         csms = fd.fisData(33, keymatch='%s ' % partner_key)
-        update_customers(csms, customer_codes, state_recs, country_recs_name)
+        update_customers(csms, customer_codes, contacts, state_recs, country_recs_name)
     if suppliers:
         supplier_codes = get_xml_id_map(oe, model='res.partner', module='F163')
         posm = fd.fisData(163, keymatch=partner_key)
@@ -329,7 +330,7 @@ def update_openerp(database, customers, suppliers, vendors, carriers, employees)
     # FIS tables loaded, start processing
 
 
-def update_customers(csms, customer_codes, state_recs, country_recs_name ):
+def update_customers(csms, customer_codes, contacts, state_recs, country_recs_name ):
     for cus_rec in csms:
         # rep = cus_rec[F33.salesrep]
         # rep = sales_people.get(rep, False)
@@ -396,7 +397,7 @@ def update_customers(csms, customer_codes, state_recs, country_recs_name ):
         else:
             id = res_partner.create(result)
             customer_codes[key] = id
-        if cus_rec[F33.contact]:
+        if contacts and cus_rec[F33.contact]:
             cus_id = id
             contact = cus_rec[F33.contact]
             result = {
