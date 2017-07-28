@@ -307,15 +307,15 @@ def update_openerp(database, customers, suppliers, vendors, carriers, employees,
     country_recs_name = dict([(r.name, r.id) for r in country_recs])
     if customers:
         customer_codes = get_xml_id_map(oe, model='res.partner', module='F33')
-        csms = fd.fisData(33, keymatch='%s ' % partner_key)
+        csms = fd.fisData('CSMS', keymatch='%s ' % partner_key)
         update_customers(csms, customer_codes, contacts, state_recs, country_recs_name)
     if suppliers:
         supplier_codes = get_xml_id_map(oe, model='res.partner', module='F163')
-        posm = fd.fisData(163, keymatch=partner_key)
+        posm = fd.fisData('POSM', keymatch=partner_key)
         update_customers(posm, supplier_codes, state_recs, country_recs_name)
     if vendors:
         vendor_codes = get_xml_id_map(oe, model='res.partner', module='F65')
-        vnms = fd.fisData(65, keymatch=partner_key)
+        vnms = fd.fisData('VNMS', keymatch=partner_key)
         update_customers(vnms, vendor_codes, state_recs, country_recs_name)
     if carriers:
         carrier_codes = get_xml_id_map(oe, model='res.partner', module='F27')
@@ -323,7 +323,7 @@ def update_openerp(database, customers, suppliers, vendors, carriers, employees,
         update_customers(carrier, carrier_codes, state_recs, country_recs_name)
     if employees:
         employee_codes = get_xml_id_map(oe, model='res.partner', module='F74')
-        emp1 = fd.fisData(74, keymatch='10%s')
+        emp1 = fd.fisData('EMP1', keymatch='10%s')
         update_customers(emp1, employee_codes, state_recs, country_recs_name)
     today = Date.today()
     today
