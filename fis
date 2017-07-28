@@ -456,19 +456,22 @@ table_keys = {
 
 def format_record(record, fields=None):
     lines = []
-    name = value = 0
+    name_width = value_width = 0
     if not fields:
         fields = range(len(record.fieldlist))
     for i, row in enumerate(record.fieldlist):
         if i in fields:
-            name = max(len(row[3]), name)
-            value = max(len(str(record[row[3]])), value)
+            name_width = max(len(row[3]), name_width)
+            value_width = max(len(str(record[row[3]])), value_width)
     for i, row in enumerate(record.fieldlist):
         if i in fields:
+            value = record[row[3]]
+            if isinstance(value, basestring):
+                value = value.replace('\0', '')
             if '$' in row[3]:
-                lines.append('%5d | %*s | %*s | %s' % (i+1, -name, row[3], -value, record[row[3]], row[1]))
+                lines.append('%5d | %*s | %*s | %s' % (i+1, -name_width, row[3], -value_width, value, row[1]))
             else:
-                lines.append('%5d | %*s | %*s | %s' % (i+1, -name, row[3], value, record[row[3]], row[1]))
+                lines.append('%5d | %*s | %*s | %s' % (i+1, -name_width, row[3], value_width, value, row[1]))
     return lines
 
 def convert_name(name, max_len=50):
