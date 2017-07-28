@@ -113,20 +113,26 @@ def query(table, code, fields):
 
 @Command(
         filenum=Spec('file abbreviation or number to operate on', ),
-        # which=Spec('which record to display', choices=['random', 'last', int], default='random'),
-        which=Spec('which record to display [random, last, <record_id>]', default='random'),
+        which=Spec('which record to display', choices=['random', 'last', 'key', 'offset'], default='random'),
+        id=Spec('key or offset if WHICH is key or offset', default=None),
         )
-def record(filenum, which):
+def record(filenum, which, id):
     if filenum.isdigit():
         filenum = int(filenum)
+    if id and which not in ('key', 'offset'):
+        abort('ID not allowed for %r' % (which, ))
     table = fd.fisData(filenum)
     print('using file', table.filename)
     if which == 'last':
         record = table.values()[-1]
     elif which == 'random':
         record = random.choice(table.values())
-    else:
+    elif which == 'offset':
+        record = table.values()[int(id)]
+    elif which == 'key':
         record = table[which]
+    else:
+        abort('unknown selection for WHICH: %r' % (which, ))
     print(record.rec)
     for line in format_record(record):
         echo(line)
