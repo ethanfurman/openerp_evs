@@ -324,7 +324,7 @@ def update_openerp(database, customers, suppliers, vendors, carriers, employees,
     if suppliers:
         supplier_codes = get_xml_id_map(oe, model='res.partner', module='F163')
         posm = fd.fisData('POSM', keymatch=partner_key)
-        update_customers(posm, supplier_codes, state_recs, country_recs_name)
+        update_suppliers(posm, supplier_codes, contacts, state_recs, country_recs_name)
     if vendors:
         vendor_codes = get_xml_id_map(oe, model='res.partner', module='F65')
         vnms = fd.fisData('VNMS', keymatch=partner_key)
@@ -341,9 +341,8 @@ def update_openerp(database, customers, suppliers, vendors, carriers, employees,
     today
     # FIS tables loaded, start processing
 
-
-def update_customers(csms, customer_codes, contacts, state_recs, country_recs_name ):
-    for cus_rec in csms:
+def update_customers(table, customer_codes, contacts, state_recs, country_recs_name ):
+    for cus_rec in table:
         # rep = cus_rec[F33.salesrep]
         # rep = sales_people.get(rep, False)
         result = {'active': False}
@@ -354,7 +353,7 @@ def update_customers(csms, customer_codes, contacts, state_recs, country_recs_na
         result['xml_id'] = key = cus_rec[F33.code]
         result['module'] = 'F33'
         # valid customer code? active account?
-        result['fis_valid'] = fis_valid = len(key) == 5
+        result['fis_valid'] = True
         if (
                 cus_rec[F33.this_year_sales]
              or cus_rec[F33.last_year_sales]
@@ -371,9 +370,11 @@ def update_customers(csms, customer_codes, contacts, state_recs, country_recs_na
                 BsnsCase(cus_rec[F33.name]),
                 flags=re.I,
                 )
+        print('name:', result['name'])
         addr1, addr2, addr3 = Sift(cus_rec[F33.addr1], cus_rec[F33.addr2], cus_rec[F33.addr3])
         addr2, city, state, postal, country = cszk(addr2, addr3)
         addr3 = ''
+        print('  ' + '\n  '.join([addr1, addr2, addr3, str([city, state, repr(postal)]), country]), verbose=2)
         if city and not (addr2 or state or postal or country):
             addr2, city = city, addr2
         addr1 = normalize_address(addr1)
@@ -384,7 +385,7 @@ def update_customers(csms, customer_codes, contacts, state_recs, country_recs_na
         result['street'] = addr1
         result['street2'] = addr2
         result['city'] = city
-        result['zip'] = postal
+        result['zip'] = postal.code
         result['country_id'] = False
         result['state_id'] = False
         if state:
@@ -405,9 +406,11 @@ def update_customers(csms, customer_codes, contacts, state_recs, country_recs_na
             id = customer_codes[key]
             # leave fis_valid alone
             del result['fis_valid']
+            print('updating with:', result, verbose=2)
             res_partner.write(id, result)
         else:
             id = res_partner.create(result)
+            print('creating with:', result, verbose=2)
             customer_codes[key] = id
         if contacts and cus_rec[F33.contact]:
             cus_id = id
@@ -424,14 +427,15 @@ def update_customers(csms, customer_codes, contacts, state_recs, country_recs_na
             result['xml_id'] = key = 'cntct_' + key
             result['module'] = 'F33'
             if key in customer_codes:
+                print('updating contact with:', result, verbose=2)
                 id = customer_codes[key]
                 # leave fis_valid alone
                 del result['fis_valid']
                 res_partner.write(id, result)
             else:
+                print('creating contact with:', result, verbose=2)
                 id = res_partner.create(result)
                 customer_codes[key] = id
-
 
 
 @Command(
@@ -466,6 +470,91 @@ def values(filenum, subset, code, fields):
 table_keys = {
     328: '10%s000010000',
     }
+
+
+def update_suppliers(table, customer_codes, contacts, state_recs, country_recs_name ):
+    for sup_rec in table:
+        result = {'active': False}
+        result['is_company'] = True
+        result['supplier'] = True
+        result['use_parent_address'] = False
+        result['xml_id'] = key = sup_rec[F163.code]
+        result['module'] = 'F163'
+        # valid customer code? active account?
+        result['fis_valid'] = True
+        result['active'] = True
+        # notify_by = Specials.get_member(cus_rec[F33.catalog_category].upper(), None)
+        # result['special_notifications'] = notify_by and notify_by.db or False
+        result['name'] = re.sub(
+                config.fis_imports.from_name,
+                config.fis_imports.to_name,
+                BsnsCase(sup_rec[F163.name]),
+                flags=re.I,
+                )
+        print('name:', result['name'])
+        addr1, addr2, addr3 = Sift(sup_rec[F163.addr1], sup_rec[F163.addr2], sup_rec[F163.addr3])
+        addr2, city, state, postal, country = cszk(addr2, addr3)
+        addr3 = ''
+        print('  ' + '\n  '.join([addr1, addr2, addr3, str([city, state, postal]), country]), verbose=2)
+        if city and not (addr2 or state or postal or country):
+            addr2, city = city, addr2
+        addr1 = normalize_address(addr1)
+        addr2 = normalize_address(addr2)
+        addr1, addr2 = AddrCase(Rise(addr1, addr2))
+        city = NameCase(city)
+        state, country = NameCase(state), NameCase(country)
+        result['street'] = addr1
+        result['street2'] = addr2
+        result['city'] = city
+        result['zip'] = postal.code
+        result['country_id'] = False
+        result['state_id'] = False
+        if state:
+            result['state_id'] = state_recs[state][0]
+            result['country_id'] = state_recs[state][2]
+        elif country:
+            country_id = country_recs_name.get(country, None)
+            if country_id is None:
+                # _logger.critical("Customer %s has invalid country <%r>" % (key, country))
+                continue
+            else:
+                result['country_id'] = country_id
+        result['phone'] = fix_phone(sup_rec[F163.tele])
+        if not result['name']:
+            # _logger.critical("Missing name for customer %s -- skipping" % (key, ))
+            continue
+        if key in customer_codes:
+            id = customer_codes[key]
+            # leave fis_valid alone
+            del result['fis_valid']
+            res_partner.write(id, result)
+        else:
+            id = res_partner.create(result)
+            customer_codes[key] = id
+        # if contacts and cus_rec[F33.contact]:
+        #     cus_id = id
+        #     contact = cus_rec[F33.contact]
+        #     result = {
+        #             'fis_valid': fis_valid,
+        #             # 'special_notifications': result['special_notifications'],
+        #             }
+        #     result['name'] = re.sub('sunridge', 'SunRidge', NameCase(contact), flags=re.I)
+        #     result['is_company'] = False
+        #     result['customer'] = True
+        #     result['parent_id'] = cus_id
+        #     result['use_parent_address'] = True
+        #     result['xml_id'] = key = 'cntct_' + key
+        #     result['module'] = 'F33'
+        #     if key in customer_codes:
+        #         id = customer_codes[key]
+        #         # leave fis_valid alone
+        #         del result['fis_valid']
+        #         res_partner.write(id, result)
+        #     else:
+        #         id = res_partner.create(result)
+        #         customer_codes[key] = id
+
+
 
 def format_record(record, fields=None):
     lines = []
