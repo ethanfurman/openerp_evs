@@ -43,25 +43,28 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, *regex):
             print('  ', tree, verbose=2)
         dirs.sort()
         files.sort()
-        if not files_only:
-            found_dirs = []
-            for d in dirs:
-                for p in regex:
-                    if hidden or (d.startswith('.') and p.startswith('^\.')) or not d.startswith('.'):
-                        if re.search(p, d):
-                            target = tree/d-base
-                            if execute:
-                                if single:
-                                    command(execute % target)
-                                else:
-                                    found_dirs.append(target)
+        found_dirs = []
+        skip_dirs = []
+        for d in dirs:
+            for p in regex:
+                if not (hidden or (d.startswith('.') and p.startswith('^\.')) or not d.startswith('.')):
+                    skip_dirs.append(d)
+                elif not files_only:
+                    if re.search(p, d):
+                        target = tree/d-base
+                        if execute:
+                            if single:
+                                command(execute % target)
                             else:
-                                if timestamp:
-                                    print(datetime.fromtimestamp((tree/d).stat()[8]), '   ', target, verbose=0)       # mtime
-                                else:
-                                    print(target, verbose=0)       # mtime
-            if found_dirs:
-                command(execute % ' '.join(found_dirs))
+                                found_dirs.append(target)
+                        else:
+                            if timestamp:
+                                print(datetime.fromtimestamp((tree/d).stat()[8]), '   ', target, verbose=0)       # mtime
+                            else:
+                                print(target, verbose=0)       # mtime
+        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        if found_dirs:
+            command(execute % ' '.join(found_dirs))
         if not dirs_only:
             found_files = []
             for f in files:
