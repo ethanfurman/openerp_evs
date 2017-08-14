@@ -1,4 +1,7 @@
 #!/usr/local/sbin/suid-python
+"""\
+Create, list, and restore OpenERP databases.
+"""
 from __future__ import print_function
 # from __future__ import print_function, unicode_literals
 
@@ -143,6 +146,7 @@ def backup(dbs, id, dst):
 
 @Command()
 def dbs():
+    "list available databases in postgres"
     print('databases available: ', ', '.join(_get_dbs_from_postgres()), verbose=0)
 
 
