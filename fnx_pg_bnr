@@ -10,42 +10,36 @@ import pwd
 import re
 import time
 
-CONFIG_DIR = activate_this = settings = PSQLCMD = PGDUMPCMD = PGDUMPALLCMD = None
-DAILY_STORAGE = MONTHLY_STORAGE = DAILY_LIMIT = MONTHLY_LIMIT = TARARCHIVE = TARDISPLAY = None
-TGZEXTRACT = COMPRESS = TODAY = POSTGRES_IDS = ACTUAL_IDS = TEMP = PORT = None
+VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
+CONFIG_DIR = VIRTUAL_ENV / 'config'
+settings = IniFile(CONFIG_DIR / 'fnx.ini', section='postgres')
+PSQLCMD = '%(psql)s %%(port)s' % settings
+PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
+PGDUMPALLCMD = '%(pg_dumpall)s %%(port)s --file=%%(filename)s --globals-only' % settings
+DAILY_STORAGE = Path(settings.daily)
+MONTHLY_STORAGE = Path(settings.monthly)
+DAILY_LIMIT = settings.daily_limit
+MONTHLY_LIMIT = settings.monthly_limit
+TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % settings
+TARDISPLAY = '%(tar)s --list --file %%(target)s' % settings
+TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % settings
+COMPRESS = '%(gzip)s --force --rsyncable %%(target_name)s' % settings
+TODAY = Date.today()
+POSTGRES_IDS = tuple(pwd.getpwnam('postgres')[2:4])
+ACTUAL_IDS = os.getuid(), os.getgid()
+TEMP = None
+PORT = None
 
 @Script(
         rescue=('ignore checks', FLAG),
-        virtual_env=Spec('virtual environment', OPTION, type=Path, envvar='VIRTUAL_ENV')
         )
 def main():
     print('  main::0', verbose=2)
     print('  __file__ =', __file__, verbose=2)
-    print('  virtual_env', virtual_env, verbose=2)
+    print('  virtual_env', VIRTUAL_ENV, verbose=2)
     #
     global START_DIR, TEMP, RESCUE
-    global CONFIG_DIR, activate_this, settings, PSQLCMD, PGDUMPCMD, PGDUMPALLCMD
-    global DAILY_STORAGE, MONTHLY_STORAGE, DAILY_LIMIT, MONTHLY_LIMIT, TARARCHIVE, TARDISPLAY
-    global TGZEXTRACT, COMPRESS, TODAY, POSTGRES_IDS, ACTUAL_IDS, TEMP, PORT
     #
-    CONFIG_DIR = virtual_env / 'config'
-    settings = IniFile(CONFIG_DIR / 'fnx.ini', section='postgres')
-    PSQLCMD = '%(psql)s %%(port)s' % settings
-    PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
-    PGDUMPALLCMD = '%(pg_dumpall)s %%(port)s --file=%%(filename)s --globals-only' % settings
-    DAILY_STORAGE = Path(settings.daily)
-    MONTHLY_STORAGE = Path(settings.monthly)
-    DAILY_LIMIT = settings.daily_limit
-    MONTHLY_LIMIT = settings.monthly_limit
-    TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % settings
-    TARDISPLAY = '%(tar)s --list --file %%(target)s' % settings
-    TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % settings
-    COMPRESS = '%(gzip)s --force --rsyncable %%(target_name)s' % settings
-    TODAY = Date.today()
-    POSTGRES_IDS = tuple(pwd.getpwnam('postgres')[2:4])
-    ACTUAL_IDS = os.getuid(), os.getgid()
-    TEMP = None
-    PORT = None
     RESCUE = rescue
     #
     if not rescue:
