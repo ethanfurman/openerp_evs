@@ -36,7 +36,7 @@ def hgissuecheck(local):
                 issue.type,
                 str(issue.id),
                 'install',
-                '--note=%s' % (commit, )
+                '--note="%s"' % (commit, ),
                 ])
         print('running --> ', ' '.join(commandline), verbose=2)
         job = Execute(commandline)
