@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/local/bin/python
 from __future__ import print_function
 
 from antipathy import Path
@@ -130,7 +130,10 @@ def check_xml(path, notes, _):
 
 
 def filetype(path):
-    if path.ext == '.py' or path.ext == '' and 'python' in firstline(path):
+    if (
+            path.ext == '.py'
+            or (path.ext == '' and firstline(path).startswith('#!') and 'python' in firstline(path))
+        ):
         return check_python
     elif path.ext == '.xml':
         return check_xml
