@@ -11,13 +11,10 @@ from scription import *
 def hgissuecheck(local):
     "update any issues mentioned in commit message"
     hg = extract_hg()
-    echo('hg:', hg)
-    echo('description', hg.description)
     commit = hg.description
     issues = find_issues(*(commit,))
     # look for issue and task flags
     for issue in issues:
-        echo('issue:', issue)
         # lop off issue #
         commit = commit.rsplit('(', 1)[0].strip()
         if issue.company is None:

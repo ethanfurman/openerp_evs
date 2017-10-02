@@ -1,10 +1,8 @@
-#!/usr/local/sbin/suid-python
+#!/usr/local/sbin/suid-python --virtualenv
 """\
 Create, list, and restore OpenERP databases.
 """
 from __future__ import print_function
-# from __future__ import print_function, unicode_literals
-
 from dbf import Date
 from antipathy import Path
 from scription import *
@@ -12,9 +10,12 @@ from tempfile import mkdtemp
 import os
 import pwd
 import re
+import sys
 import time
 
-settings = IniFile('/etc/openerp/fnx.ini', section='postgres')
+VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
+CONFIG_DIR = VIRTUAL_ENV / 'config'
+settings = IniFile(CONFIG_DIR / 'fnx.ini', section='postgres')
 PSQLCMD = '%(psql)s %%(port)s' % settings
 PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
 PGDUMPALLCMD = '%(pg_dumpall)s %%(port)s --file=%%(filename)s --globals-only' % settings
@@ -39,8 +40,13 @@ PORT = None
         )
 def main():
     print('  main::0', verbose=2)
+    print('  __file__ =', __file__, verbose=2)
+    print('  virtual_env', VIRTUAL_ENV, verbose=2)
+    #
     global START_DIR, TEMP, RESCUE
+    #
     RESCUE = rescue
+    #
     if not rescue:
         if not DAILY_STORAGE.exists():
             raise SystemExit('%s needs to be created, and owned by postgres' % DAILY_STORAGE)
@@ -384,11 +390,10 @@ def _get_pg_port():
     if PORT is not None:
         return
     with user_ids(0, 0):
-        etc_oe = Path('/etc/openerp')
-        if etc_oe.exists('server.conf'):
-            conf = etc_oe/'server.conf'
-        elif etc_oe.exists('openerp-server.conf'):
-            conf = etc_oe/'openerp-server.conf'
+        if CONFIG_DIR.exists('server.conf'):
+            conf = CONFIG_DIR/'server.conf'
+        elif CONFIG_DIR.exists('openerp-server.conf'):
+            conf = CONFIG_DIR/'openerp-server.conf'
         else:
             raise ValueError('unable to find OpenERP configuration file')
         with conf.open() as conf:
