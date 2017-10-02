@@ -4,6 +4,7 @@
 from __future__ import print_function
 
 from antipathy import Path
+from antipathy.path import uPath
 from contextlib2 import ExitStack
 from itertools import groupby
 from pandaemonium import PidLockFile, LockError, AlreadyLocked
@@ -109,10 +110,11 @@ def self_test():
             'amount of time to wait for previous job to finish',
             OPTION, abbrev='lt', force_default=-1,
             ),
+        virtualenv=Spec('activate a virtual environment', OPTION, None, type=uPath),
         job=('job to run', REQUIRED, ),
         )
 @Alias('cronaide')
-def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, check_stdout, lock_file, lock_timeout, lock, *job):
+def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, check_stdout, lock_file, lock_timeout, lock, virtualenv, *job):
     """monitor JOB, sending results/status to EMAIL
 
     By default, a locking pid file is used with an immediate timeout, and
@@ -124,6 +126,23 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
     """
     if not email and (capture or heartbeat):
         abort('if CAPTURE or HEARTBEAT is specified then EMAIL must also be specified')
+    job_env = os.environ.copy()
+    if virtualenv:
+        if not virtualenv.exists('bin/activate'):
+            abort('cannot find a virtualenv at %s' % (virtualenv, ))
+        if job_env.get('VIRTUAL_ENV'):
+            # virtualenv currently active -- remove it from child jobs
+            old_virtualenv = job_env['VIRTUAL_ENV']
+            old_virtualenv_path = old_virtualenv + '/bin'
+            path = job_env.get('PATH', '').split(':')
+            path.remove(old_virtualenv_path)
+            job_env['PATH'] = ':'.join(path)
+        virtualenv_path = job_env.get('PATH', '').split(':')
+        virtualenv_path.insert(0, virtualenv+'/bin')
+        job_env['VIRTUAL_ENV'] = virtualenv
+        job_env['PATH'] = ':'.join(virtualenv_path)
+        if 'PYTHONHOME' in job_env:
+            del job_env['PYTHONHOME']
     if lock_file or lock:
         logger.info('lock: %s', lock)
         if lock_file is None:
@@ -158,7 +177,7 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
             else:
                 logger.info('lock obtained')
         logger.info('running job: %s', ' '.join(job))
-        result = Job(job)
+        result = Job(job, env=job_env)
         if lock_file:
             lock_file.seal(result.pid)
             exit.push(lock_file)
