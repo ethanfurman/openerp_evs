@@ -23,3 +23,15 @@ def update_permissions(ui, repo, **kwds):
         echo(job.stdout, end='')
         error(job.stderr, end='')
         return job.returncode
+
+def install_files(ui, repo, **kwds):
+    '''
+    install files in .hgupdate_install to /opt/bin
+    '''
+    url = repo.url()
+    if url.startswith('file:'):
+        home = url[5:]
+        job = Execute('/usr/local/bin/hgupdate install-to-opt-bin %s' % home)
+        echo(job.stdout, end='')
+        error(job.stderr, end='')
+        return job.returncode

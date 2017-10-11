@@ -38,4 +38,39 @@ def add_group_write_to(repo):
     print('return code:', job.returncode)
     raise SystemExit(job.returncode)
 
+@Command(
+        repo=Spec('root directory of repo', type=Path),
+        )
+def install_to_opt_bin(repo):
+    "copies files specified in repo/.hgupdate_install to /opt/bin"
+    print('getting install file from', repo)
+    if not repo.exists('.hgupdate_install'):
+        print('no such file')
+        return
+    lines = open(repo/'.hgupdate_install').readlines()
+    opt_bin = Path('/opt/bin')
+    # pre-screen
+    error_lines = []
+    for line in lines:
+        if len(line.split()) not in (1, 2):
+            error_lines.append(line)
+    if error_lines:
+        abort('unable to process %d lines:\n  %r' % (len(lines), '\n  '.join(error_lines)))
+    for line in lines:
+        names = line.split()
+        if len(names) == 1:
+            src = repo/names[0]
+            dst = opt_bin/(src.filename)
+            src.copy(dst)
+        elif len(names) == 2:
+            src, dst = names
+            src = repo/src
+            dst = opt_bin/dst
+            src.copy(dst)
+        else:
+            abort('THIS SHOULD NOT HAPPEN -- unable to process %d-item line: <%r>' % (len(names), line))
+        dst.chown(0, 0)
+        dst.chmod(0o6755)
+
+
 Main()
