@@ -23,13 +23,15 @@ def hgissuecheck(local):
         commandline = []
         if local:
             commandline.extend([
-                '/opt/openerp/addons/project/scripts/status',
+                '/opt/bin/project_status',
                 ])
         else:
             commandline.extend([
                 'ssh',
                 'ethan@openerp.sunridgefarms.com',
-                '/home/ethan/openerp/addons/project/scripts/status',
+		'VIRTUAL_ENV=/opt/openerp',
+		'PATH=/opt/openerp/bin:$PATH',
+                '/opt/bin/project_status',
                 ])
         commandline.extend([
                 'set',

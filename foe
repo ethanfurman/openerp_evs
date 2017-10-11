@@ -1,4 +1,4 @@
-#!/usr/bin/python2.7
+#!/usr/local/sbin/suid-python --virtualenv
 """
 Utility to copy postgres/openerp backups to the network, and
 copy FIS data from the network.
@@ -6,12 +6,13 @@ copy FIS data from the network.
 from __future__ import print_function
 from antipathy import Path
 from scription import *
+import os
 import re
 
 @Script()
 def main():
     global config
-    config = OrmFile('/etc/openerp/fnx.ini', types={'_path':Path})
+    config = OrmFile('%s/config/fnx.ini' % os.environ['VIRTUAL_ENV'], types={'_path':Path})
 
 @Command()
 def backups():
@@ -61,10 +62,11 @@ def fis():
                 ' :{path}/{pre}????'
                 ' :{path}/{pre}?????'
                 ' :{path}/{pre}??????'
-                ' /FIS/data/').format(
+                ' {local_path}/').format(
                         host=config.network.fis_data_host,
                         path=config.network.fis_data_path,
                         pre=config.network.fis_data_prefix,
+                        local_path=config.network.fis_data_local_path,
                         )
     if script_verbosity:
         command += ' -v'
@@ -83,7 +85,7 @@ def fis():
     if job.returncode:
         error('\n-----------------\n'.join(output))
         raise SystemExit(job.returncode)
-    print('chmod 440 /FIS/data/*', verbose=1)
-    Path('/FIS/data/').chmod(0o440, '*')
+    print('chmod 440 %s/*' % config.network.fis_data_local_path, verbose=1)
+    Path('/FIS/%s') % config.network.fis_data_local_path.chmod(0o440, '*')
 
 Run()
