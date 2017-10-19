@@ -7,6 +7,7 @@ from dbf import Date
 from antipathy import Path
 from scription import *
 from tempfile import mkdtemp
+from openerplib import get_connection, get_records
 import os
 import pwd
 import re
@@ -15,21 +16,33 @@ import time
 
 VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
 CONFIG_DIR = VIRTUAL_ENV / 'config'
-settings = IniFile(CONFIG_DIR / 'fnx.ini', section='postgres')
-PSQLCMD = '%(psql)s %%(port)s' % settings
-PGDUMPCMD = '%(pg_dump)s %%(port)s --file=%%(filename)s %%(db)s' % settings
-PGDUMPALLCMD = '%(pg_dumpall)s %%(port)s --file=%%(filename)s --globals-only' % settings
-DAILY_STORAGE = Path(settings.daily)
-MONTHLY_STORAGE = Path(settings.monthly)
-DAILY_LIMIT = settings.daily_limit
-MONTHLY_LIMIT = settings.monthly_limit
-TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % settings
-TARDISPLAY = '%(tar)s --list --file %%(target)s' % settings
-TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % settings
-COMPRESS = '%(gzip)s --force --rsyncable %%(target_name)s' % settings
+pg_settings = IniFile(CONFIG_DIR / 'fnx.ini', section='postgres')
+server_config = IniFile(CONFIG_DIR / 'server.conf', section='options', plain=True)
+PGHOST = server_config.db_host
+PGPORT = server_config.db_port
+PGDATA = server_config.db_name
+PGUSER = server_config.db_user
+PGPSWD = server_config.db_password
+PSQLCMD = '%(psql)s -h %%(host)s %%(port)s -U postgres %%(database)s' % pg_settings
+PGDUMPCMD = '%(pg_dump)s -h %%(host)s %%(port)s -U postgres --file=%%(filename)s %%(db)s' % pg_settings
+PGDUMPALLCMD = '%(pg_dumpall)s -h %%(host)s %%(port)s -U postgres --file=%%(filename)s --globals-only' % pg_settings
+DAILY_STORAGE = Path(pg_settings.daily)
+MONTHLY_STORAGE = Path(pg_settings.monthly)
+DAILY_LIMIT = pg_settings.daily_limit
+MONTHLY_LIMIT = pg_settings.monthly_limit
+TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % pg_settings
+TARDISPLAY = '%(tar)s --list --file %%(target)s' % pg_settings
+TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % pg_settings
+COMPRESS = '%(gzip)s --force --rsyncable %%(target_name)s' % pg_settings
+oe_settings = IniFile(CONFIG_DIR / 'fnx.ini', section='openerp')
+OEHOST = oe_settings.host
+OEUSER = oe_settings.user
+OEDATA = oe_settings.db
+OEPSWD = oe_settings.pw
 
 TODAY = Date.today()
 POSTGRES_IDS = tuple(pwd.getpwnam('postgres')[2:4])
+OPENERP_IDS = tuple(pwd.getpwnam('openerp')[2:4])
 ACTUAL_IDS = os.getuid(), os.getgid()
 TEMP = None
 PORT = None
@@ -38,7 +51,7 @@ PORT = None
 @Script(
         rescue=('ignore checks', FLAG),
         )
-def main():
+def main(rescue):
     print('  main::0', verbose=2)
     print('  __file__ =', __file__, verbose=2)
     print('  virtual_env', VIRTUAL_ENV, verbose=2)
@@ -72,16 +85,20 @@ def main():
 @Command(
         dbs=('database(s) to backup [default: all dbs]', MULTI),
         id=('extra info for extra backups (appears in compressed file name)', OPTION),
-        dst=('where to put backup', OPTION, Path, None),
+        dst=('where to put backup', OPTION, None, Path),
+        files=('include files? [default: True if all dbs]', FLAG, None, Trivalent),
         )
-def backup(dbs, id, dst):
+def backup(dbs, id, dst, files):
     """
     backs up all postgres databases, roles, etc., or single databases
     """
     print('  backup::0', verbose=2)
     print('  backup::1', verbose=2)
     everything = not bool(dbs)
+    if files is Unknown:
+        files = everything
     print('backing up everything?', everything)
+    print('backing up files?', files)
     with user_ids(*POSTGRES_IDS):
         print('backup::', verbose=2)
         TEMP.chdir()
@@ -108,7 +125,7 @@ def backup(dbs, id, dst):
         print()
         if everything:
             # if everything, get globals options...
-            pg_dumpall = PGDUMPALLCMD % dict(filename=TEMP/'_roles_etc.sql', port=PORT)
+            pg_dumpall = PGDUMPALLCMD % dict(filename=TEMP/'_roles_etc.sql', host=PGHOST, port=PORT, user=PGUSER)
             print('   roles, etc.', end='')
             result = Execute(pg_dumpall, pty=False)
             if result.returncode:
@@ -119,7 +136,7 @@ def backup(dbs, id, dst):
                 for line in result.stdout.strip().split('\n'):
                     print('   %s' % line)
             if result.returncode:
-                print('       %s' % pg_dump, file=stderr)
+                print('       %s' % pg_dumpall, file=stderr)
                 for line in result.stderr.split('\n'):
                     print('      %s' % line, file=stderr)
                 print()
@@ -128,24 +145,32 @@ def backup(dbs, id, dst):
     # wait an extra few seconds to give tar file time to show up
     # (keep getting sporadic errors at Falcon)
     time.sleep(5)
+
     # postgres is backed up, revert to root privilege
     # then, combine them all into a single tar.gz file
     print('  backup::4', verbose=2)
-    tgz_file = _tgz(TEMP, storage, id)
-    # finally, make a copy in monthly if today is the first
+    tgz_dbs_file = _tgz_dbs(TEMP, storage, id)
+    if files:
+        # now get files (must be after dbs or they would be included in the
+        # dbs file
+        tgz_bin_file = _tgz_files(storage, id)
+    # finally, make a copy in monthly if today is the first day of the month
     # but only if store == True
     if store:
         if TODAY.day == 1:
             print('  backup::5', verbose=2)
-            tgz_file.copy(MONTHLY_STORAGE)
+            tgz_dbs_file.copy(MONTHLY_STORAGE)
+            tgz_bin_file.copy(MONTHLY_STORAGE)
             print('  backup::6', verbose=2)
         _remove_excess(DAILY_STORAGE, DAILY_LIMIT)
         _remove_excess(MONTHLY_STORAGE, MONTHLY_LIMIT)
     else:
         print('  backup::7', verbose=2)
-        tgz_file.chown(*ACTUAL_IDS)
+        tgz_dbs_file.chown(*ACTUAL_IDS)
+        tgz_bin_file.chown(*ACTUAL_IDS)
         print('  backup::8', verbose=2)
-        tgz_file.copy(dst or START_DIR)
+        tgz_dbs_file.copy(dst or START_DIR)
+        tgz_bin_file.copy(dst or START_DIR)
     if failures:
         raise SystemExit('not all databases backed up')
 
@@ -303,9 +328,10 @@ def restore(db, date, file, new_db, all_dbs):
 
 
 def _backup(db, filename):
-    pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db, port=PORT)
+    pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db, host=PGHOST, port=PORT, user=PGUSER)
     print('   %s' % db, end='')
-    result = Execute(pg_dump, pty=False)
+    with user_ids(*POSTGRES_IDS):
+        result = Execute(pg_dump, pty=False)
     if result.returncode:
         print(' -- FAILED', file=stderr)
     else:
@@ -325,12 +351,15 @@ def _db_name_from_file(filename, datestr=None):
     print('  checking', filename, 'for datestr %r' % datestr, verbose=2)
     if datestr is None:
         # probably an sql filename
+        print('  stripping date...')
         return re.sub('\d{4}-\d{1,2}-\d{1,2}_', '', filename.split('.')[0])
     if filename.startswith(datestr):
+        print('  old-style filename')
         # old style with leading date and '_pg91.sql' trailer
         db_name = filename[11:].rsplit('_', 1)[0].strip()
-    else:
+    elif filename.endswith('.sql'):
         # new style with .sql trailer
+        print('  new-style filename', verbose=2)
         db_name = filename[:-4]
     return db_name
 
@@ -368,7 +397,7 @@ def _get_dbs_from_postgres():
             # template0 is special, and cannot be accessed
             dbs.append(db)
     if not dbs:
-        print('FAILED: %s' % psql, file=stderr)
+        error('FAILED: %r' % result)
         raise SystemExit('no databases found!')
     return dbs
 
@@ -381,7 +410,7 @@ def _get_dbs_from_tar(tar_file):
             # template0 is special, and cannot be accessed
             dbs.append(db)
     if not dbs:
-        print('FAILED: %s' % psql, file=stderr)
+        error('FAILED: %r' % result)
         raise SystemExit('no databases found!')
     return dbs
 
@@ -389,33 +418,29 @@ def _get_pg_port():
     global PORT, PSQLCMD
     if PORT is not None:
         return
-    with user_ids(0, 0):
-        if CONFIG_DIR.exists('server.conf'):
-            conf = CONFIG_DIR/'server.conf'
-        elif CONFIG_DIR.exists('openerp-server.conf'):
-            conf = CONFIG_DIR/'openerp-server.conf'
-        else:
-            raise ValueError('unable to find OpenERP configuration file')
-        with conf.open() as conf:
-            for line in conf.readlines():
-                if line.startswith('db_port'):
-                    port = line.split('=')[1].strip()
-                    if port == 'False':
-                        PORT = ''
-                    else:
-                        PORT = '-p %d' % int(port)
-        PSQLCMD = (PSQLCMD % dict(port=PORT)).strip()
+    if PGPORT:
+        PORT = '-p %d' % int(PGPORT)
+    else:
+        PORT = ''
+    PSQLCMD = (PSQLCMD % dict(port=PORT, user=PGUSER, host=PGHOST, database=PGDATA)).strip()
 
 def _list(archive):
     print('  _list::1', verbose=2)
     print('checking archive', archive.filename)
+    if 'pg91' in archive:
+        tables = True
+    else:
+        tables = False
     datestr = archive.filename[:11]
     tgz_cmd = TARDISPLAY % dict(target=archive)
     result = Execute(tgz_cmd, pty=False)
     dbs = []
     if result.stdout:
         for line in result.stdout.strip().split('\n'):
-            db_name = _db_name_from_file(line, datestr)
+            if tables:
+                db_name = _db_name_from_file(line, datestr)
+            else:
+                db_name = line
             if db_name:
                 dbs.append(db_name)
     if result.returncode:
@@ -447,9 +472,13 @@ def _remove_excess(storage, limit):
     keep LIMIT days worth of our backups
     """
     try:
-        found = storage.glob('*_pg91.tar.gz')
-        found.sort(reverse=True)
-        for target in found[limit:]:
+        found_dbs = storage.glob('*_pg91.tar.gz')
+        found_dbs.sort(reverse=True)
+        found_bin = storage.glob('*_files.tar.gz')
+        found_bin.sort(reverse=True)
+        for target in found_dbs[limit:]:
+            target.remove()
+        for target in found_bin[limit:]:
             target.remove()
     except:
         print(sys.exc_info(), file=stderr)
@@ -585,7 +614,7 @@ def _restore_single_db(sql_file, db, new_db):
         raise error
     # possibly examine the log file for errors here
 
-def _tgz(source_path, target_path, id=None):
+def _tgz_dbs(source_path, target_path, id=None):
     if id is None:
         target = target_path/'%s_pg91.tar.gz' % TODAY
     else:
@@ -593,6 +622,43 @@ def _tgz(source_path, target_path, id=None):
     tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(source_path.listdir()))
     print('\narchiving . . .')
     result = Execute(tgz_cmd, cwd=source_path, pty=False, GZIP="--rsyncable")
+    if result.stdout:
+        for line in result.stdout.split('\n'):
+            print('   %s' % line)
+    if result.returncode:
+        print('FAILED: %s' % tgz_cmd, file=stderr)
+        for line in result.stderr.split('\n'):
+            print('        %s' % line, file=stderr)
+        raise SystemExit(result.returncode)
+    print('\ncompressing . . .')
+    return target
+
+def _tgz_files(target_path, id=None):
+    # static files/locations are in /var/openerp/
+    # fnxfs.*
+    # fnxfs/*
+    # location of dynamic store is in openerp at
+    #   ir.config_parameter:ir_attachment.location
+    targets = Path('/var/openerp').glob('fnxfs.*')
+    targets.append(Path('/var/openerp/fnxfs'))
+    conn = get_connection(hostname=OEHOST, database=OEDATA, login=OEUSER, password=OEPSWD)
+    location = get_records(conn, 'ir.config_parameter', domain=[('key','=','ir_attachment.location')])
+    if location:
+        location = location[0].value
+        if location.startswith('file://'):
+            location = Path(location[7:])
+            if location[0] not in '/\\':
+                # add openerp directory to location
+                location = VIRTUAL_ENV / 'openerp' / location
+            targets.append(location)
+    # file names collected, now generate tgz file name, and back them up
+    if id is None:
+        target = target_path/'%s_files.tar.gz' % TODAY
+    else:
+        target = target_path/'%s_%s_files.tar.gz' % (TODAY, id)
+    tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(targets))
+    print('\narchiving . . .')
+    result = Execute(tgz_cmd, cwd='/', pty=False, GZIP="--rsyncable")
     if result.stdout:
         for line in result.stdout.split('\n'):
             print('   %s' % line)
