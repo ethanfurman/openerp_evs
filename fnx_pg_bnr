@@ -233,11 +233,11 @@ def list(date, file, daily, monthly):
     if daily:
         print('  list::1', verbose=2)
         for file in sorted(DAILY_STORAGE.glob('*')):
-            print(file, verbose=0)
+            echo(file)
     elif monthly:
         print('  list::2', verbose=2)
         for file in sorted(MONTHLY_STORAGE.glob('*')):
-            print(file, verbose=0)
+            echo(file)
     else:
         print('  list::3', verbose=2)
         if date:
@@ -247,16 +247,14 @@ def list(date, file, daily, monthly):
                 found = MONTHLY_STORAGE.glob('%s*' % date)
                 if not found:
                     abort('no files found for %s' % date)
-            if len(found) > 1:
-                abort('should only have one match, but found %s' % ', '.join(found))
-            [file] = found
         print('  list::5', verbose=2)
-        print(file)
-        db_names = _list(file)
-        for name in db_names:
-            print('   %s' % name, verbose=0)
-        print()
-        print('  list::6', verbose=2)
+        for file in found:
+            echo(file)
+            db_names = _list(file)
+            for name in db_names:
+                echo('   %s' % name)
+            echo()
+            print('  list::6', verbose=2)
 
 
 @Command(
