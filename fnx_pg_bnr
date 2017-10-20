@@ -639,6 +639,7 @@ def _tgz_files(target_path, id=None):
     #   ir.config_parameter:ir_attachment.location
     targets = Path('/var/openerp').glob('fnxfs.*')
     targets.append(Path('/var/openerp/fnxfs'))
+    targets.extend(CONFIG_DIR.glob('*'))
     conn = get_connection(hostname=OEHOST, database=OEDATA, login=OEUSER, password=OEPSWD)
     location = get_records(conn, 'ir.config_parameter', domain=[('key','=','ir_attachment.location')])
     if location:
