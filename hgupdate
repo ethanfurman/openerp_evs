@@ -70,7 +70,10 @@ def install_to_opt_bin(repo):
         else:
             abort('THIS SHOULD NOT HAPPEN -- unable to process %d-item line: <%r>' % (len(names), line))
         dst.chown(0, 0)
-        dst.chmod(0o6755)
+        if dst.ext:
+            dst.chmod(0o0444)
+        else:
+            dst.chmod(0o6755)
 
 
 Main()
