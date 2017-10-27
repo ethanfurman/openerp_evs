@@ -637,9 +637,24 @@ def _tgz_files(target_path, id=None):
     # fnxfs/*
     # location of dynamic store is in openerp at
     #   ir.config_parameter:ir_attachment.location
+    #
+    # create config tar file in /tmp
+    target = '/tmp/oe_config.tar.gz'
+    CONFIG_DIR.chdir()
+    tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(Path.glob('*')))
+    print('\narchiving . . .')
+    result = Execute(tgz_cmd, cwd=CONFIG_DIR, pty=False, GZIP="--rsyncable")
+    if result.stdout:
+        for line in result.stdout.split('\n'):
+            print('   %s' % line)
+    if result.returncode:
+        print('FAILED: %s' % tgz_cmd, file=stderr)
+        for line in result.stderr.split('\n'):
+            print('        %s' % line, file=stderr)
+        raise SystemExit(result.returncode)
     targets = Path('/var/openerp').glob('fnxfs.*')
     targets.append(Path('/var/openerp/fnxfs'))
-    targets.extend(CONFIG_DIR.glob('*'))
+    targets.append('/tmp/oe_config.tar.gz')
     conn = get_connection(hostname=OEHOST, database=OEDATA, login=OEUSER, password=OEPSWD)
     location = get_records(conn, 'ir.config_parameter', domain=[('key','=','ir_attachment.location')])
     if location:
