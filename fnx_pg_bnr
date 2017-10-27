@@ -23,7 +23,7 @@ PGPORT = server_config.db_port
 PGDATA = server_config.db_name
 PGUSER = server_config.db_user
 PGPSWD = server_config.db_password
-PSQLCMD = '%(psql)s -h %%(host)s %%(port)s -U postgres %%(database)s' % pg_settings
+PSQLCMD = '%(psql)s -h %%(host)s %%(port)s -U postgres' % pg_settings
 PGDUMPCMD = '%(pg_dump)s -h %%(host)s %%(port)s -U postgres --file=%%(filename)s %%(db)s' % pg_settings
 PGDUMPALLCMD = '%(pg_dumpall)s -h %%(host)s %%(port)s -U postgres --file=%%(filename)s --globals-only' % pg_settings
 DAILY_STORAGE = Path(pg_settings.daily)
@@ -33,6 +33,7 @@ MONTHLY_LIMIT = pg_settings.monthly_limit
 TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % pg_settings
 TARDISPLAY = '%(tar)s --list --file %%(target)s' % pg_settings
 TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % pg_settings
+UNTAR = '%(tar)s -C %%(root_dir)s -xf %%(archive)s' % pg_settings
 COMPRESS = '%(gzip)s --force --rsyncable %%(target_name)s' % pg_settings
 oe_settings = IniFile(CONFIG_DIR / 'fnx.ini', section='openerp')
 OEHOST = oe_settings.host
@@ -263,29 +264,44 @@ def list(date, file, daily, monthly):
         file=('archive file to extract from / sql file to restore from', OPTION, None, Path),
         new_db=('restore as a new database [default: restore to same database]', OPTION, None),
         all_dbs=('restore all databases found in backup', FLAG, None),
+        user_files=('restore user attachments, etc.', FLAG, None),
+        config_files=Spec('restore configuration files', OPTION, None, choices=['missing', 'all']),
         )
-def restore(db, date, file, new_db, all_dbs):
+def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     print('  restore::0', verbose=2)
-    if db and not _user_exists('openerp') and not RESCUE:
+    if (db or all_dbs) and not _user_exists('openerp') and not RESCUE:
         abort('missing openerp user in postgresql, aborting restore [use --resuce to override]')
     all_db_names = []
     all_sql_files = []
     if date and file:
-        raise ValueError('only one of DATE and FILE may be specified')
+        abort('only one of DATE and FILE may be specified')
+    if not (db or all_dbs or user_files or config_files):
+        help('nothing to do')
     # if file and not (name or new_db):
     #     raise ValueError('either NAME or NEW_DB must be specified with FILE')
-    tgz_file = sql_file = None
+    tgz_file = sql_file = user_file = None
     if date:
         print('  restore::1', verbose=2)
-        found = DAILY_STORAGE.glob('%s*' % date)
+        found = DAILY_STORAGE.glob('%s_pg*' % date)
+        found_user = DAILY_STORAGE.glob('%s_files*' % date)
+        print('found: ', found, verbose=3)
+        print('found_user: ', found_user, verbose=3)
         if not found:
             print('  restore::2', verbose=2)
-            found = MONTHLY_STORAGE.glob('%s*' % date)
+            found = MONTHLY_STORAGE.glob('%s_pg*' % date)
+            found_user = MONTHLY_STORAGE.glob('%s_files*' % date)
             if not found:
-                raise ValueError('no files found for %s' % date)
+                abort('no files found for %s' % date)
+            if (user_files or config_files) and not found_user:
+                abort('user/openerp config files now found for %s' % date)
         if len(found) > 1:
-            raise ValueError('should only have one match, but found %s' % ', '.join(found))
+            abort('should only have one match, but found %s' % ', '.join(found))
+        if len(found_user) > 1:
+            abort('should anly have one match, but found %s' % ', '.join(found_user))
         [file] = found
+        [user_file] = found_user
+    if not (file or user_file):
+        abort('nothing to do')
     if file:
         print('  restore::3', verbose=2)
         # if a file is specified copy it to TEMP
@@ -320,10 +336,17 @@ def restore(db, date, file, new_db, all_dbs):
         if all_dbs:
             # restore everything
             _restore_all_dbs(all_sql_files, all_db_names)
-        else:
+        elif db:
             # restore single database
             _restore_single_db(sql_file, db, new_db)
-
+    if config_files:
+        # UNTAR = '%(tar)s -C %%(root_dir)s -xf %%(archive)s' % pg_settings
+        # restore attachments/etc. and/or config files
+        _untar(archive=user_file, root_dir='/', target='tmp/oe_config.tar.gz')
+        skip = config_files == 'missing'
+        _untar(archive='/tmp/oe_config.tar.gz', root_dir=CONFIG_DIR, skip_old_files=skip)
+    if user_files:
+        _untar(archive=user_file, root_dir='/')
 
 def _backup(db, filename):
     pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db, host=PGHOST, port=PORT, user=PGUSER)
@@ -683,6 +706,23 @@ def _tgz_files(target_path, id=None):
         raise SystemExit(result.returncode)
     print('\ncompressing . . .')
     return target
+
+def _untar(archive, root_dir, skip_old_files=False, target=None):
+    untar_cmd = UNTAR % dict(root_dir=root_dir, archive=archive)
+    if skip_old_files:
+        untar_cmd += ' --skip-old-files'
+    if target:
+        untar_cmd += ' ' + target
+    print('\nextracting . . .')
+    result = Execute(untar_cmd, pty=False)
+    if result.stdout:
+        for line in result.stdout.split('\n'):
+            print('   %s' % line)
+    if result.returncode:
+        print('FAILED: %s' % untar_cmd, file=stderr)
+        for line in result.stderr.split('\n'):
+            print('        %s' % line, file=stderr)
+        raise SystemExit(result.returncode)
 
 def _user_exists(user):
     output = _psql('-c "select rolname from pg_authid;"').split('\n')
