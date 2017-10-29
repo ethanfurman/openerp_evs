@@ -23,9 +23,21 @@ PGPORT = server_config.db_port
 PGDATA = server_config.db_name
 PGUSER = server_config.db_user
 PGPSWD = server_config.db_password
-PSQLCMD = '%(psql)s -h %%(host)s %%(port)s -U postgres' % pg_settings
-PGDUMPCMD = '%(pg_dump)s -h %%(host)s %%(port)s -U postgres --file=%%(filename)s %%(db)s' % pg_settings
-PGDUMPALLCMD = '%(pg_dumpall)s -h %%(host)s %%(port)s -U postgres --file=%%(filename)s --globals-only' % pg_settings
+PSQLCMD = '%(psql)s' % pg_settings
+PGDUMPCMD = '%(pg_dump)s' % pg_settings
+PGDUMPALLCMD = '%(pg_dumpall)s' % pg_settings
+if PGHOST:
+    print('PGHOST has a truthy value of %r' % PGHOST)
+    PSQLCMD += ' -h %(host)s' % PGHOST
+    PGDUMPCMD += ' -h %(host)s' % PGHOST
+    PGDUMPALLCMD += ' -h %(host)s' % PGHOST
+if PGPORT:
+    print('PGPORT has a truthy value of %r' % PGPORT)
+    PSQLCMD += ' -p %(port)s' % PGPORT
+    PGDUMPCMD += ' -p %(port)s' % PGPORT
+    PGDUMPALLCMD += ' -p %(port)s' % PGPORT
+PGDUMPCMD += ' --file=%(filename)s %(db)s'
+PGDUMPALLCMD += ' --file=%(filename)s --globals-only'
 DAILY_STORAGE = Path(pg_settings.daily)
 MONTHLY_STORAGE = Path(pg_settings.monthly)
 DAILY_LIMIT = pg_settings.daily_limit
@@ -46,7 +58,7 @@ POSTGRES_IDS = tuple(pwd.getpwnam('postgres')[2:4])
 OPENERP_IDS = tuple(pwd.getpwnam('openerp')[2:4])
 ACTUAL_IDS = os.getuid(), os.getgid()
 TEMP = None
-PORT = None
+# PORT = None
 
 
 @Script(
@@ -67,7 +79,7 @@ def main(rescue):
         if not MONTHLY_STORAGE.exists():
             raise SystemExit('%s needs to be created, and owned by postgres' % MONTHLY_STORAGE)
     START_DIR = Path.getcwd()
-    _get_pg_port()
+    # _get_pg_port()
     print('  main::1', verbose=2)
     try:
         with user_ids(*POSTGRES_IDS):
@@ -126,7 +138,7 @@ def backup(dbs, id, dst, files):
         print()
         if everything:
             # if everything, get globals options...
-            pg_dumpall = PGDUMPALLCMD % dict(filename=TEMP/'_roles_etc.sql', host=PGHOST, port=PORT, user=PGUSER)
+            pg_dumpall = PGDUMPALLCMD % dict(filename=TEMP/'_roles_etc.sql')
             print('   roles, etc.', end='')
             result = Execute(pg_dumpall, pty=False)
             if result.returncode:
@@ -349,7 +361,7 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
         _untar(archive=user_file, root_dir='/')
 
 def _backup(db, filename):
-    pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db, host=PGHOST, port=PORT, user=PGUSER)
+    pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db)
     print('   %s' % db, end='')
     with user_ids(*POSTGRES_IDS):
         result = Execute(pg_dump, pty=False)
@@ -435,15 +447,15 @@ def _get_dbs_from_tar(tar_file):
         raise SystemExit('no databases found!')
     return dbs
 
-def _get_pg_port():
-    global PORT, PSQLCMD
-    if PORT is not None:
-        return
-    if PGPORT:
-        PORT = '-p %d' % int(PGPORT)
-    else:
-        PORT = ''
-    PSQLCMD = (PSQLCMD % dict(port=PORT, user=PGUSER, host=PGHOST, database=PGDATA)).strip()
+# def _get_pg_port():
+#     global PORT, PSQLCMD
+#     if PORT is not None:
+#         return
+#     if PGPORT:
+#         PORT = '-p %d' % int(PGPORT)
+#     else:
+#         PORT = ''
+#     PSQLCMD = (PSQLCMD % dict(port=PORT, user=PGUSER, host=PGHOST, database=PGDATA)).strip()
 
 def _list(archive):
     print('  _list::1', verbose=2)
