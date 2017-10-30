@@ -28,14 +28,14 @@ PGDUMPCMD = '%(pg_dump)s' % pg_settings
 PGDUMPALLCMD = '%(pg_dumpall)s' % pg_settings
 if PGHOST:
     print('PGHOST has a truthy value of %r' % PGHOST)
-    PSQLCMD += ' -h %(host)s' % PGHOST
-    PGDUMPCMD += ' -h %(host)s' % PGHOST
-    PGDUMPALLCMD += ' -h %(host)s' % PGHOST
+    PSQLCMD += ' -h %s' % PGHOST
+    PGDUMPCMD += ' -h %s' % PGHOST
+    PGDUMPALLCMD += ' -h %s' % PGHOST
 if PGPORT:
     print('PGPORT has a truthy value of %r' % PGPORT)
-    PSQLCMD += ' -p %(port)s' % PGPORT
-    PGDUMPCMD += ' -p %(port)s' % PGPORT
-    PGDUMPALLCMD += ' -p %(port)s' % PGPORT
+    PSQLCMD += ' -p %s' % PGPORT
+    PGDUMPCMD += ' -p %s' % PGPORT
+    PGDUMPALLCMD += ' -p %s' % PGPORT
 PGDUMPCMD += ' --file=%(filename)s %(db)s'
 PGDUMPALLCMD += ' --file=%(filename)s --globals-only'
 DAILY_STORAGE = Path(pg_settings.daily)
