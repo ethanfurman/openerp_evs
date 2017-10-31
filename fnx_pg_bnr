@@ -24,8 +24,8 @@ PGDATA = server_config.db_name
 PGUSER = server_config.db_user
 PGPSWD = server_config.db_password
 PSQLCMD = '%(psql)s' % pg_settings
-PGDUMPCMD = '%(pg_dump)s' % pg_settings
-PGDUMPALLCMD = '%(pg_dumpall)s' % pg_settings
+PGDUMPCMD = '%(pg_dump)s'
+PGDUMPALLCMD = '%(pg_dumpall)s'
 if PGHOST:
     print('PGHOST has a truthy value of %r' % PGHOST)
     PSQLCMD += ' -h %s' % PGHOST
@@ -36,8 +36,8 @@ if PGPORT:
     PSQLCMD += ' -p %s' % PGPORT
     PGDUMPCMD += ' -p %s' % PGPORT
     PGDUMPALLCMD += ' -p %s' % PGPORT
-PGDUMPCMD += ' --file=%(filename)s %(db)s'
-PGDUMPALLCMD += ' --file=%(filename)s --globals-only'
+PGDUMPCMD += ' --file=%%(filename)s %%(db)s'
+PGDUMPALLCMD += ' --file=%%(filename)s --globals-only'
 DAILY_STORAGE = Path(pg_settings.daily)
 MONTHLY_STORAGE = Path(pg_settings.monthly)
 DAILY_LIMIT = pg_settings.daily_limit
@@ -106,6 +106,8 @@ def backup(dbs, id, dst, files):
     backs up all postgres databases, roles, etc., or single databases
     """
     print('  backup::0', verbose=2)
+    # get correct pg_dump and pg_dump_all
+    _get_dump_cmds()
     print('  backup::1', verbose=2)
     everything = not bool(dbs)
     if files is Unknown:
@@ -446,6 +448,20 @@ def _get_dbs_from_tar(tar_file):
         error('FAILED: %r' % result)
         raise SystemExit('no databases found!')
     return dbs
+
+def _get_dump_cmds():
+    print('gdc::0', verbose=2)
+    global PGDUMPCMD, PGDUMPALLCMD
+    # get server version
+    text = _psql("""-c "select current_setting('server_version_num')" --tuples-only""")
+    print('gdc::1', verbose=2)
+    version = 'v' + text.strip()[:-2]
+    print('gdc::2', verbose=2)
+    PGDUMPCMD %= pg_settings[version]
+    print('gdc::3', verbose=2)
+    PGDUMPALLCMD %= pg_settings[version]
+    print('gdc::4', verbose=2)
+    print('commands are:\n%r\n%r' % (PGDUMPCMD, PGDUMPALLCMD), verbose=3)
 
 # def _get_pg_port():
 #     global PORT, PSQLCMD
