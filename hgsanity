@@ -18,9 +18,10 @@ except ImportError:
 
 @Command(
         pyflakes=Spec('enable pyflakes checks (if available)', FLAG, envvar='PYFLAKES'),
+        sanity=Spec('check space vs tab, trailing whitespace, pdb inclusion, etc.', FLAG, envvar='HGSANITY'),
         files=Spec('files to check for syntax errors', OPTION, type=Path),
         )
-def hgsanity(pyflakes=True, *files):
+def hgsanity(pyflakes=True, sanity=True, *files):
     "Check for syntax errors, tab indentation, and trailing whitespace"
     if not files:
         print('getting hg info')
@@ -47,7 +48,7 @@ def hgsanity(pyflakes=True, *files):
             continue
         print('getting filetype of', path)
         checker = filetype(path)
-        if checker:
+        if sanity and checker:
             print('  checking', path)
             checker(path, notes, pyflakes)
     if notes:
