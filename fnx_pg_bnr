@@ -289,8 +289,8 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     all_sql_files = []
     if date and file:
         abort('only one of DATE and FILE may be specified')
-    if not (db or all_dbs or user_files or config_files):
-        help('nothing to do')
+    if not (date or file):
+        help('must specify a date or a file')
     # if file and not (name or new_db):
     #     raise ValueError('either NAME or NEW_DB must be specified with FILE')
     tgz_file = sql_file = user_file = None
@@ -315,7 +315,7 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
         [file] = found
         [user_file] = found_user
     if not (file or user_file):
-        abort('nothing to do')
+        abort('no files found')
     if file:
         print('  restore::3', verbose=2)
         # if a file is specified copy it to TEMP
