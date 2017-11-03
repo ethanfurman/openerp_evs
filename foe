@@ -86,6 +86,6 @@ def fis():
         error('\n-----------------\n'.join(output))
         raise SystemExit(job.returncode)
     print('chmod 440 %s/*' % config.network.fis_data_local_path, verbose=1)
-    Path('/FIS/%s') % config.network.fis_data_local_path.chmod(0o440, '*')
+    config.network.fis_data_local_path.chmod(0o440, '*')
 
 Run()
