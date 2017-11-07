@@ -21,19 +21,25 @@ def extract_hg():
                     "author:{author}\n"
                     "branch:{branches}\n"
                     "date:{date}\n"
-                    "description:{desc}\n"
                     "files:{files}\n"
                     "added_files:{file_adds}\n"
                     "removed_files:{file_dels}\n"
                     "revision:{rev}\n"
                     "tags:{tags}\n"
+                    "description:{desc}\n"
                     "'"
                 % ns.node
                 ).stdout.strip().split('\n')
+        desc = False
         for line in others:
-            k, v = line.split(':', 1)
-            ns[k] = v
-            ns.names.append(k)
+            if desc:
+                ns[k] = "%s %s" % (ns[k].strip(), line.strip())
+            else:
+                k, v = line.split(':', 1)
+                ns[k] = v
+                ns.names.append(k)
+                if k == 'description':
+                    desc = True
         for k in ('files', 'added_files', 'removed_files', 'tags'):
             v = ns[k]
             ns[k] = [t.strip() for t in v.split(',') if t.strip()]
