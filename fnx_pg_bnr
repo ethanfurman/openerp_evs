@@ -285,14 +285,14 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     print('  restore::0', verbose=2)
     if (db or all_dbs) and not _user_exists('openerp') and not RESCUE:
         abort('missing openerp user in postgresql, aborting restore [use --resuce to override]')
-    all_db_names = []
-    all_sql_files = []
+    if (user_files or config_files) and (db or all_dbs):
+        abort('cannot restore database and files in one pass')
     if date and file:
         abort('only one of DATE and FILE may be specified')
     if not (date or file):
         help('must specify a date or a file')
-    # if file and not (name or new_db):
-    #     raise ValueError('either NAME or NEW_DB must be specified with FILE')
+    all_db_names = []
+    all_sql_files = []
     tgz_file = sql_file = user_file = None
     if date:
         print('  restore::1', verbose=2)
@@ -307,13 +307,15 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
             if not found:
                 abort('no files found for %s' % date)
             if (user_files or config_files) and not found_user:
-                abort('user/openerp config files now found for %s' % date)
+                abort('user/openerp config files not found for %s' % date)
         if len(found) > 1:
             abort('should only have one match, but found %s' % ', '.join(found))
         if len(found_user) > 1:
             abort('should anly have one match, but found %s' % ', '.join(found_user))
         [file] = found
         [user_file] = found_user
+        if user_files:
+            file = None
     if not (file or user_file):
         abort('no files found')
     if file:
@@ -329,30 +331,30 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
             sql_file = file
             if db is None:
                 db = _db_name_from_file(sql_file)
-    print('  restore::4', verbose=2)
-    with user_ids(*POSTGRES_IDS):
-        print('  restore::5', verbose=2)
-        TEMP.chdir()
-        print('  sql_file: %s\n  tgz_file: %s' % (sql_file, tgz_file), verbose=2)
-        if tgz_file:
-            print('  restore::6', verbose=2)
-            # at this point, we have the archive file, and we have the
-            # name(s) of the database to extract in db or all_db_names
-            if db:
-                print('  restore::7', verbose=2)
-                sql_file = _extract(db, tgz_file)
-            else:
-                print('  restore::8', verbose=2)
-                print('extracting sql files...')
-                for _db in all_db_names:
-                    all_sql_files.append(_extract(_db, tgz_file))
-        # we now have sql file(s) to restore from
-        if all_dbs:
-            # restore everything
-            _restore_all_dbs(all_sql_files, all_db_names)
-        elif db:
-            # restore single database
-            _restore_single_db(sql_file, db, new_db)
+        print('  restore::4', verbose=2)
+        with user_ids(*POSTGRES_IDS):
+            print('  restore::5', verbose=2)
+            TEMP.chdir()
+            print('  sql_file: %s\n  tgz_file: %s' % (sql_file, tgz_file), verbose=2)
+            if tgz_file:
+                print('  restore::6', verbose=2)
+                # at this point, we have the archive file, and we have the
+                # name(s) of the database to extract in db or all_db_names
+                if db:
+                    print('  restore::7', verbose=2)
+                    sql_file = _extract(db, tgz_file)
+                else:
+                    print('  restore::8', verbose=2)
+                    print('extracting sql files...')
+                    for _db in all_db_names:
+                        all_sql_files.append(_extract(_db, tgz_file))
+            # we now have sql file(s) to restore from
+            if all_dbs:
+                # restore everything
+                _restore_all_dbs(all_sql_files, all_db_names)
+            elif db:
+                # restore single database
+                _restore_single_db(sql_file, db, new_db)
     if config_files:
         # UNTAR = '%(tar)s -C %%(root_dir)s -xf %%(archive)s' % pg_settings
         # restore attachments/etc. and/or config files
