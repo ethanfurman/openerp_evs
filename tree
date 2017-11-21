@@ -36,7 +36,7 @@ def tree(path, include_files, omit_dirs, hidden, links, depth, time_it=False, _p
     if time_it:
         start = time()
     if not _prefix:
-        print(path, '/', sep='', verbose=0)
+        print(path/'', sep='', verbose=0)
     if depth is not None:
         depth -= 1
     for current, dirs, files in path.walk():
