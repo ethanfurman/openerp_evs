@@ -13,7 +13,7 @@ def hgblacklist():
     "check that no blacklisted files are being committed"
     hg = extract_hg()
     repo = Path(hg.pending)
-    cfg = ui()
+    cfg = ui.load()
     cfg.readconfig(repo/'.hg/hgrc')
     blacklist_cfg = cfg.configitems('blacklist')
     blacklisted = []
