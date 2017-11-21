@@ -31,6 +31,8 @@ from time import time
         depth=Spec('limit recursion to x levels', OPTION, type=int, default=None),
         )
 def tree(path, include_files, omit_dirs, hidden, links, depth, time_it=False, _prefix=''):
+    if path.isfile() or not path.exists():
+        abort('%s is not a valid path' % (path, ))
     if omit_dirs and isinstance(omit_dirs[0], unicode):
         omit_dirs = [d.encode('utf8') for d in omit_dirs]
     if time_it:
