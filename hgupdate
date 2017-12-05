@@ -74,8 +74,10 @@ def install_to_opt_bin(repo):
         else:
             abort('THIS SHOULD NOT HAPPEN -- unable to process %d-item line: <%r>' % (len(names), line))
         dst.chown(0, 0)
-        if dst.ext or not suid:
+        if dst.ext:
             dst.chmod(0o0444)
+        elif not suid:
+            dst.chmod(0o0755)
         else:
             dst.chmod(0o6755)
 
