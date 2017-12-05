@@ -52,12 +52,16 @@ def install_to_opt_bin(repo):
     # pre-screen
     error_lines = []
     for line in lines:
-        if len(line.split()) not in (1, 2):
+        if len(line.split()) not in (1, 2, 3):
             error_lines.append(line)
     if error_lines:
         abort('unable to process %d lines:\n  %r' % (len(lines), '\n  '.join(error_lines)))
     for line in lines:
         names = line.split()
+        suid = True
+        if names[-1] in ('--suid', '--no-suid'):
+            suid = names[-1] == '--suid'
+            names.pop()
         if len(names) == 1:
             src = repo/names[0]
             dst = opt_bin/(src.filename)
@@ -70,7 +74,7 @@ def install_to_opt_bin(repo):
         else:
             abort('THIS SHOULD NOT HAPPEN -- unable to process %d-item line: <%r>' % (len(names), line))
         dst.chown(0, 0)
-        if dst.ext:
+        if dst.ext or not suid:
             dst.chmod(0o0444)
         else:
             dst.chmod(0o6755)
