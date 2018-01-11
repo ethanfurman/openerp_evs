@@ -46,7 +46,7 @@ except:
 def main(log, log_file):
     global logger
     if log:
-        logger = logging.getLogger()
+        logger = logging.getLogger('cronaide')
         logger.setLevel(getattr(logging, log))
         handler = logging.handlers.TimedRotatingFileHandler(log_file, when='W0', backupCount=52)
         handler.setFormatter(Formatter('%(asctime)s %(pid)d %(name)s %(levelname)s: %(message)s'))
@@ -124,6 +124,7 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
     If the LOCK-* options are not specified, or LOCK_ACTION is quit, TIMEOUT is
     how long JOB is allowed to run before killing it;
     """
+    logger = logging.getLogger('watch')
     if not email and (capture or heartbeat):
         abort('if CAPTURE or HEARTBEAT is specified then EMAIL must also be specified')
     job_env = os.environ.copy()
@@ -144,11 +145,11 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
         if 'PYTHONHOME' in job_env:
             del job_env['PYTHONHOME']
     if lock_file or lock:
-        logger.info('lock: %s', lock)
+        logger.debug('lock: %s', lock)
         if lock_file is None:
             lock_file = script_commands[script_command_name].__scription__['lock_file']._script_default
         lock_file = lock_file.replace('${job-name}', Path(job[0]).filename)
-        logger.info('lock-file: %s', lock_file)
+        logger.debug('lock-file: %s', lock_file)
     ppid = os.getppid()
     openlog('AIDE', LOG_PID, LOG_CRON)
     failed = False
@@ -175,13 +176,13 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
                     syslog(LOG_INFO, '[from %s] failed <%r>' % (ppid, exc.args[0]))
                     sys.exit(-1, exc.args[0])
             else:
-                logger.info('lock obtained')
+                logger.debug('lock obtained')
         logger.info('running job: %s', ' '.join(job))
         result = Job(job, env=job_env)
         if lock_file:
             lock_file.seal(result.pid)
             exit.push(lock_file)
-            logger.info('lock sealed for PID: %d', result.pid)
+            logger.debug('lock sealed for PID: %d', result.pid)
         try:
             result.communicate(timeout=job_timeout)
         except TimeoutError:
