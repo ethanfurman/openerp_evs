@@ -93,14 +93,14 @@ def self_test():
 @Command(
         email=Spec('Who to send job output to.', MULTI, force_default=notify_list),
         email_subject=Spec('subject to use for email (if any)', OPTION, ('subject', 's')),
-        job_timeout=Spec('allowed time for job OR time to wait for lock (in seconds)', OPTION, force_default=3600),
+        job_timeout=Spec('allowed time for job OR time to wait for lock (in seconds)', OPTION, type=int),
         capture=('Send all output to EMAIL', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
         check_stdout=Spec('check for "ERROR" in stdout stream', FLAG, abbrev=None, force_default=True),
         lock=Spec(
             'do LOCK if previous job still running',
-            OPTION, force_default='wait', choices=['wait', 'kill'],
+            OPTION, choices=['wait', 'kill'],
             ),
         lock_file=Spec(
             'use LOCK-FILE to prevent multiple concurrent runs',
