@@ -37,6 +37,40 @@ except:
     mail_server = 'localhost'
     notify_list = ['root@localhost']
 
+# and helper
+def TimeLapse(time):
+    "convert time to seconds (e.g. 2m -> 120)"
+    # if all digits, must be seconds already
+    if not time:
+        return 0
+    elif isinstance(time, (int, long)):
+        return time
+    text = time
+    if text[0] == '-':
+        sign = -1
+        text = text[1:]
+    else:
+        sign = +1
+    if text.isdigit():
+        return sign * int(text)
+    wait_time = 0
+    digits = []
+    for c in text:
+        if c.isdigit():
+            digits.append(c)
+            continue
+        number = int(''.join(digits))
+        c = c.lower()
+        if c not in ('hms'):
+            abort('invalid wait time: %r' % time)
+        wait_time += {'h':3600, 'm':60, 's':1}[c] * number
+        digits = []
+    else:
+        if digits:
+            # didn't specify a unit, abort
+            abort('missing trailing time unit of h, m, or s in %r' % time)
+    return wait_time
+
 # API
 
 @Script(
@@ -93,35 +127,35 @@ def self_test():
 @Command(
         email=Spec('Who to send job output to.', MULTI, force_default=notify_list),
         email_subject=Spec('subject to use for email (if any)', OPTION, ('subject', 's')),
-        job_timeout=Spec('allowed time for job OR time to wait for lock (in seconds)', OPTION, type=int),
+        job_timeout=Spec('allowed time for job', OPTION, abbrev='jt', type=TimeLapse),
         capture=('Send all output to EMAIL', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
         check_stdout=Spec('check for "ERROR" in stdout stream', FLAG, abbrev=None, force_default=True),
-        lock=Spec(
+        lock_action=Spec(
             'do LOCK if previous job still running',
-            OPTION, choices=['wait', 'kill'],
+            OPTION, abbrev='la', choices=['wait', 'kill'],
             ),
-        lock_file=Spec(
+        lock=Spec(
             'use LOCK-FILE to prevent multiple concurrent runs',
-            OPTION, abbrev=('f', 'lf'), default='/var/run/${job-name}.pid',
+            OPTION, abbrev='lf', force_default='/var/run/${job-name}.pid',
             ),
         lock_timeout=Spec(
             'amount of time to wait for previous job to finish',
-            OPTION, abbrev='lt', force_default=-1,
+            OPTION, abbrev='lt', force_default=-1, type=TimeLapse,
             ),
         virtualenv=Spec('activate a virtual environment', OPTION, None, type=uPath),
         job=('job to run', REQUIRED, ),
         )
 @Alias('cronaide')
-def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, check_stdout, lock_file, lock_timeout, lock, virtualenv, *job):
+def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, check_stdout, lock, lock_timeout, lock_action, virtualenv, *job):
     """monitor JOB, sending results/status to EMAIL
 
     By default, a locking pid file is used with an immediate timeout, and
     the default action if the previous job is still running is to quit.
     (The lock filename is the name of the first command.)
 
-    If the LOCK-* options are not specified, or LOCK_ACTION is quit, TIMEOUT is
+    If the LOCK-* options are not specified, or LOCK_ACTION is kill, TIMEOUT is
     how long JOB is allowed to run before killing it;
     """
     if not email and (capture or heartbeat):
@@ -143,12 +177,12 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
         job_env['PATH'] = ':'.join(virtualenv_path)
         if 'PYTHONHOME' in job_env:
             del job_env['PYTHONHOME']
-    if lock_file or lock:
+    if lock or lock_action:
+        logger.debug('lock_action: %s', lock_action)
+        if lock is None:
+            lock = script_commands[script_command_name].__scription__['lock']._script_default
+        lock = lock.replace('${job-name}', Path(job[0]).filename)
         logger.debug('lock: %s', lock)
-        if lock_file is None:
-            lock_file = script_commands[script_command_name].__scription__['lock_file']._script_default
-        lock_file = lock_file.replace('${job-name}', Path(job[0]).filename)
-        logger.debug('lock-file: %s', lock_file)
     ppid = os.getppid()
     openlog('AIDE', LOG_PID, LOG_CRON)
     failed = False
@@ -156,9 +190,9 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
     with ExitStack() as exit:
         syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
         exit.callback(closelog)
-        if lock_file:
+        if lock:
             try:
-                lock_file = get_lock(lock, lock_file, lock_timeout)
+                lock = get_lock(lock_action, lock, lock_timeout)
             except LockError:
                 cls, exc, tb = sys.exc_info()
                 logger.error('%s; aborting', exc.args[0])
@@ -177,9 +211,9 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
                 logger.debug('lock obtained')
         logger.info('running job: %s', ' '.join(job))
         result = Job(job, env=job_env)
-        if lock_file:
-            lock_file.seal(result.pid)
-            exit.push(lock_file)
+        if lock:
+            lock.seal(result.pid)
+            exit.push(lock)
             logger.debug('lock sealed for PID: %d', result.pid)
         try:
             result.communicate(timeout=job_timeout)
@@ -382,21 +416,21 @@ def check_syslog():
 
 # supporting routines
 
-def get_lock(lock, lock_file, timeout):
-    lock_file = PidLockFile(lock_file)
-    if lock == 'wait':
+def get_lock(lock_action, lock_file, timeout):
+    lock = PidLockFile(lock_file)
+    if lock_action in (None, 'wait'):
         # wait for lock, quit after timeout if unable to get lock
         try:
-            lock_file.acquire(timeout=timeout)
+            lock.acquire(timeout=timeout)
         except AlreadyLocked:
             raise LockError('previous job(s) still running after timeout')
-    elif lock == 'kill':
-        lock_file.is_stale(timeout=1)
-        orgpid = lock_file.stored_pid
+    elif lock_action == 'kill':
+        lock.is_stale(timeout=1)
+        orgpid = lock.stored_pid
         try:
-            lock_file.acquire(timeout=timeout)
+            lock.acquire(timeout=timeout)
         except AlreadyLocked:
-            actpid = lock_file.read_pid()
+            actpid = lock.read_pid()
             if orgpid is not None and orgpid != actpid:
                 raise LockError('previous job ended, another job took its place')
             else:
@@ -407,12 +441,12 @@ def get_lock(lock, lock_file, timeout):
                     if exc.errno != errno.ESRCH:
                         raise LockError('error killing previous job')
                 try:
-                    lock_file.acquire(timeout=random.randint(1, 5))
+                    lock.acquire(timeout=random.randint(1, 5))
                 except LockError:
                     raise LockError('unable to obtain lock')
     else:
-        abort('unknown option for LOCK: %r' % lock)
-    return lock_file
+        abort('unknown option for LOCK_ACTION: %r' % lock_action)
+    return lock
 
 def read(filename):
     if filename.endswith('.gz'):
