@@ -5,9 +5,11 @@ copy FIS data from the network.
 """
 from __future__ import print_function
 from antipathy import Path
+from datetime import timedelta
+from dbf import Date
 from scription import *
+from VSS.utils import xrange
 import os
-import re
 
 @Script()
 def main():
@@ -17,66 +19,100 @@ def main():
 @Command()
 def backups():
     """
-    copy backup from virtual machine to host
+    copy backup from master to slave
 
-    source files from postgres.daily to:
+    local files live in:
+    - postgres.daily
+    - postgres.monthly
+    network files live in:
     - network.daily_backup
     - network.monthly_backup
+    and the operation (send vs receive) is determined by:
+    - network.role
     """
-    if config.network.role != 'master':
-        abort('unable to move backups from non-master machine')
-    daily_files = [f for f in config.postgres.daily.glob('*') if re.search('\d{4}-\d{2}-\d{2}', f)]
-    command = 'rsync -a %s %s' % (' '.join(daily_files), config.network.daily_backup)
-    if script_verbosity:
-        command += ' -v'
-    print(command, verbose=1)
-    job = Execute(command, pty=True, password=config.network.pw)
-    print(job.stdout, verbose=1)
-    if job.returncode:
-        error(job.stderr)
-        raise SystemExit(job.returncode)
-    monthly_files = [f for f in config.postgres.daily.glob('*') if re.search('\d{4}-\d{2}-01', f)]
-    if not monthly_files:
-        return
-    command = 'rsync -a %s %s' % (' '.join(monthly_files), config.network.monthly_backup)
-    if script_verbosity:
-        command += ' -v'
-    print(command, verbose=1)
-    job = Execute(command, pty=True, password=config.network.pw)
-    print(job.stdout, verbose=1)
-    if job.returncode:
-        error(job.stderr)
-        raise SystemExit(job.returncode)
+    if config.network.role == 'master':
+        daily_src = config.postgres.daily
+        monthly_src = config.postgres.monthly
+        daily_dst = config.network.daily_backup
+        monthly_dst = config.network.monthly_backup
+        host = config.network.slave
+        to_remote = True
+        print('moving backups from\n  %s to\n  %s:%s\nand from\n  %s to\n  %s:%s' % (
+            daily_src, host, daily_dst,
+            monthly_src, host, monthly_dst,
+            ))
+    elif config.network.role == 'slave':
+        daily_src = config.network.daily_backup
+        monthly_src = config.network.monthly_backup
+        daily_dst = config.postgres.daily
+        monthly_dst = config.postgres.monthly
+        host = config.network.master
+        to_remote = False
+        print('moving backups from\n  %s:%s to\n  %s\nand from\n  %s:%s to\n  %s' % (
+            host, daily_src, daily_dst,
+            host, monthly_src, monthly_dst,
+            ))
+    else:
+        help('invalid network role: %r' % config.network.role)
+    daily_files = [
+        (daily_src/d.strftime('%Y-%m-%d') + '_*')
+        for d in xrange(
+            Date.today().replace(delta_day=-1),
+            step=timedelta(-1),
+            count=config.postgres.daily_limit)
+        ]
+    monthly_files = [
+        (monthly_src/d.strftime('%Y-%m-%d') + '_*')
+        # below Date dance ensures we are in the previous month if today is the first
+        for d in xrange(
+            Date.today().replace(day=-1).replace(day=1),
+            step=lambda initial, i, prev_value: prev_value.replace(delta_month=-1),
+            count=config.postgres.monthly_limit)
+        ]
+    output = []
+    command, job = rsync(daily_files, host, daily_dst, to_remote)
+    if job.returncode or job.stderr:
+        output.extend(['*' * 50, command, '-' * 50, job.stdout, '-' * 50, job.stderr])
+    command, job = rsync(monthly_files, host, monthly_dst, to_remote)
+    if job.returncode or job.stderr:
+        output.extend(['*' * 50, command, '-' * 50, job.stdout, '-' * 50, job.stderr])
+    if output:
+        output.append('*' * 50)
+    if config.network.role == 'slave':
+        _remove_excess(config.postgres.daily, config.postgres.daily_limit)
+        _remove_excess(config.postgres.monthly, config.postgres.monthly_limit)
+    if output:
+        error('\n'.join(output))
+        return Exit.Unknown
 
-@Command()
-def fis():
+
+@Command(
+        complete=('copy all files, or just the ones mirrored to OpenERP?', FLAG),
+        )
+def fis(complete):
     """
-    update FIS files from host virtual machine
+    update FIS files master
 
-    copy newer files from network.fis_data to /FIS/data
+    copy from network.fis_data_host/path to network.fis_data_local_path
     """
     if config.network.get('fis_data_host') is None:
         abort('canonical fis data host not configured')
+    host = config.network.fis_data_host
+    path = config.network.fis_data_path
+    pre = config.network.fis_data_prefix
+    local_path = config.network.fis_data_local_path
+    if complete:
+        files = '{path}/{pre}???? {path}/{pre}????? {path}/{pre}??????'.format(path=path, pre=pre).split()
+    else:
+        files = ['%s/%s%s' % (path, pre, f) for f in config.network.fis_openerp_files.split()]
     output = []
-    command = ( 'rsync -a {host}:'
-                ' :{path}/{pre}????'
-                ' :{path}/{pre}?????'
-                ' :{path}/{pre}??????'
-                ' {local_path}/').format(
-                        host=config.network.fis_data_host,
-                        path=config.network.fis_data_path,
-                        pre=config.network.fis_data_prefix,
-                        local_path=config.network.fis_data_local_path,
-                        )
-    if script_verbosity:
-        command += ' -v'
-    print(command, verbose=1)
-    job = Execute(command, pty=True, password=config.network.pw, timeout=3600*5)
-    output.extend([command, job.stderr, job.stdout])
-    print(job.stdout, verbose=1)
-    if job.returncode:
-        error('\n-----------------\n'.join(output))
-        raise SystemExit(job.returncode)
+    try:
+        print('calling rsync')
+        command, job = rsync(files, host, local_path)
+    except RSyncFailure as exc:
+        error('\n-----------------\n'.join([exc.commandline, exc.job.stdout, exc.job.stderr]))
+        raise SystemExit(exc.job.returncode)
+    output.extend([command, job.stdout, job.stderr])
     command = 'chown -R openerp: /FIS'
     print(command, verbose=1)
     job = Execute(command, timeout=60*15)
@@ -87,5 +123,60 @@ def fis():
         raise SystemExit(job.returncode)
     print('chmod 440 %s/*' % config.network.fis_data_local_path, verbose=1)
     config.network.fis_data_local_path.chmod(0o440, '*')
+
+
+class RSyncFailure(Exception):
+    "raised when rsync command fails"
+    job = None
+    def __init__(self, job, commandline):
+        super(RSyncFailure, self).__init__()
+        self.job = job
+        self.commandline = commandline
+
+
+def rsync(files, host, dst_path, to_remote=False):
+    """copies files to dst_path
+
+    to_remote == True -> local files are sent to host:dst_path
+                False -> host:files are sent to dst_path
+    dst_path -> directory to copy to
+    host -> IP/DNS name of remote host
+    files -> full path of files to copy
+    """
+    if to_remote:
+        command = (
+                'rsync -a %s root@%s:%s'
+                % (' '.join(files), host, dst_path)
+                )
+    else:
+        command = (
+                'rsync -a root@%s:%s %s/'
+                % (host, ' :'.join(files), dst_path)
+                )
+    output = []
+    if script_verbosity:
+        command += ' -v'
+    print(command, verbose=1)
+    job = Execute(command, pty=True, password=config.network.pw, password_timeout=300, timeout=3600*5)
+    output.extend([command, job.stderr, job.stdout])
+    return command, job
+
+def _remove_excess(storage, limit):
+    """
+    keep LIMIT days worth of our backups
+    """
+    print('removing excess backups')
+    print('  allowing %d days in %s' % (limit, storage), verbose=2)
+    found_dbs = storage.glob('*_pg91.tar.gz')
+    found_dbs.sort(reverse=True)
+    found_bin = storage.glob('*_files.tar.gz')
+    found_bin.sort(reverse=True)
+    for target in found_dbs[limit:]:
+        print('    removing %s' % target, verbose=2)
+        target.remove()
+    for target in found_bin[limit:]:
+        print('    removing %s' % target, verbose=2)
+        target.remove()
+
 
 Run()
