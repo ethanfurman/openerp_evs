@@ -14,6 +14,7 @@ from socket import getfqdn
 from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON
 from textwrap import dedent, wrap
 from time import time
+import datetime
 import errno
 import gzip
 import logging
@@ -438,24 +439,35 @@ def get_lock(lock_action, lock_file, timeout):
         logger.debug('%s: kill', lock_file)
         try:
             logger.debug('%s: first acquire attempt', lock_file)
+            #
+            # on failure, lock.last_read_pid and lock.last_read_timestamp will be set
+            #
             lock.acquire(timeout=timeout)
         except AlreadyLocked:
+            # check if enough time has passed to warrant killing the process
             logger.debug('%s: first attempt failed', lock_file)
             active_pid = lock.last_read_pid
-            try:
-                logger.debug('%s: killing job %r', lock_file, active_pid)
-                os.kill(active_pid, SIGKILL)
-            except OSError:
-                exc = sys.exc_info()[1]
-                if exc.errno != errno.ESRCH:
-                    raise LockError('error killing previous job')
-            try:
-                logger.debug('%s: second acquire attempt', lock_file)
-                lock.acquire(timeout=random.randint(1, 5))
-            except LockError:
-                exc = sys.exc_info()[1]
-                lock.error('%s: second attempt failed with <%s>', lock_file, exc)
-                raise LockError('unable to obtain lock')
+            start = datetime.datetime.strptime(lock.last_read_timestamp, "%Y-%m-%d.%H:%M:%S")
+            now = datetime.datetime.now()
+            if now - start <= datetime.timedelta(seconds=timeout):
+                abort('previous job within grace period (process %s started at %s)'
+                        % (logger.last_read_pid, logger.last_read_timestamp)
+                        )
+            else:
+                try:
+                    logger.debug('%s: killing job %r', lock_file, active_pid)
+                    os.kill(active_pid, SIGKILL)
+                except OSError:
+                    exc = sys.exc_info()[1]
+                    if exc.errno != errno.ESRCH:
+                        raise LockError('error killing previous job')
+                try:
+                    logger.debug('%s: second acquire attempt', lock_file)
+                    lock.acquire(timeout=random.randint(1, 5))
+                except LockError:
+                    exc = sys.exc_info()[1]
+                    lock.error('%s: second attempt failed with <%s>', lock_file, exc)
+                    raise LockError('unable to obtain lock')
     else:
         abort('unknown option for LOCK_ACTION: %r' % lock_action)
     return lock
