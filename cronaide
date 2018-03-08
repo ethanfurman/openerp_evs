@@ -133,15 +133,16 @@ def self_test():
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
         check_stdout=Spec('check for "ERROR" in stdout stream', FLAG, abbrev=None, force_default=True),
         lock_action=Spec(
-            'do LOCK if previous job still running',
+            'do LOCK-ACTION if previous job still running',
             OPTION, abbrev='la', choices=['wait', 'kill'],
             ),
         lock=Spec(
-            'use LOCK-FILE to prevent multiple concurrent runs',
+            'use LOCK to prevent multiple concurrent runs',
             OPTION, abbrev='lf', force_default='/var/run/${job-name}.pid',
             ),
         lock_timeout=Spec(
-            'amount of time to wait for previous job to finish',
+            'LOCK-ACTION=wait -> amount of time to wait for previous job to finish\n'
+            'LOCK-ACTION=kill -> immediately kill previous job if it has been running for LOCK-TIMEOUT',
             OPTION, abbrev='lt', force_default=-1, type=TimeLapse,
             ),
         virtualenv=Spec('activate a virtual environment', OPTION, None, type=uPath),
@@ -153,9 +154,9 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
 
     By default, a locking pid file is used with an immediate timeout, and
     the default action if the previous job is still running is to quit.
-    (The lock filename is the name of the first command.)
+    (The default lock filename is the name of the first command.)
 
-    If the LOCK-* options are not specified, or LOCK_ACTION is kill, TIMEOUT is
+    If the LOCK-* options are not specified, or LOCK_ACTION is kill, LOCK-TIMEOUT is
     how long JOB is allowed to run before killing it;
     """
     if not email and (capture or heartbeat):
