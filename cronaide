@@ -5,7 +5,6 @@ from __future__ import print_function
 
 from antipathy import Path
 from antipathy.path import uPath
-from contextlib2 import ExitStack
 from itertools import groupby
 from pandaemonium import PidLockFile, LockError, AlreadyLocked, logger as pandaemonium_logger
 from scription import *
@@ -191,15 +190,14 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
         logger.debug('lock: %s', lock)
     ppid = os.getppid()
     openlog('AIDE', LOG_PID, LOG_CRON)
-    while "trying to run job":
-        failed = False
-        start = time()
-        with ExitStack() as exit:
+    try:
+        while "trying to run job":
+            failed = False
+            start = time()
             syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
-            exit.callback(closelog)
             if lock:
                 try:
-                    lock = get_lock(lock_action, lock, lock_timeout)
+                    pid_lock = get_lock(lock_action, lock, lock_timeout)
                 except LockError:
                     cls, exc, tb = sys.exc_info()
                     logger.error('%s; aborting', exc.args[0])
@@ -218,8 +216,8 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     logger.debug('lock obtained')
             logger.info('running job: %s', ' '.join(job))
             result = Job(job, env=job_env)
-            if lock:
-                lock.seal(result.pid)
+            if pid_lock:
+                pid_lock.seal(result.pid)
                 logger.debug('lock sealed for PID: %d', result.pid)
             try:
                 result.communicate(timeout=job_timeout)
@@ -227,8 +225,8 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                 pass
             finally:
                 result.close()
-                if lock:
-                    lock.release()
+                if pid_lock:
+                    pid_lock.release()
             stop = time()
             elapsed = stop - start
             msg = None
@@ -292,10 +290,18 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     print(result.stdout, verbose=0, end='')
                 if result.stderr:
                     print(result.stderr, end='', file=sys.stderr)
-        if retry_job:
-            retry_job -= 1
-        else:
-            break
+            if failed:
+                if retry_job:
+                    logger.debug('job failed, retrying (attempts left: %d)', retry_job)
+                    retry_job -= 1
+                else:
+                    logger.debug('job failed with %s, exiting', result.returncode or Exit.Unknown)
+                    break
+            else:
+                logger.info('job finished')
+                break
+    finally:
+        closelog()
     if failed:
         sys.exit(result.returncode or Exit.Unknown)
     sys.exit(result.returncode)
