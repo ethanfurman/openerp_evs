@@ -132,6 +132,7 @@ def self_test():
         email=Spec('Who to send job output to.', MULTI, force_default=notify_list),
         email_subject=Spec('subject to use for email (if any)', OPTION, ('subject', 's')),
         job_timeout=Spec('allowed time for job', OPTION, abbrev='jt', type=TimeLapse),
+        retry_job=Spec('number of times to retry job on failure', OPTION, type=int),
         capture=('Send all output to EMAIL', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
@@ -153,7 +154,7 @@ def self_test():
         job=('job to run', REQUIRED, ),
         )
 @Alias('cronaide')
-def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, check_stdout, lock, lock_timeout, lock_action, virtualenv, *job):
+def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, passthrough, check_stdout, lock, lock_timeout, lock_action, virtualenv, *job):
     """monitor JOB, sending results/status to EMAIL
 
     By default, a locking pid file is used with an immediate timeout, and
@@ -190,108 +191,113 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
         logger.debug('lock: %s', lock)
     ppid = os.getppid()
     openlog('AIDE', LOG_PID, LOG_CRON)
-    failed = False
-    start = time()
-    with ExitStack() as exit:
-        syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
-        exit.callback(closelog)
-        if lock:
+    while "trying to run job":
+        failed = False
+        start = time()
+        with ExitStack() as exit:
+            syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
+            exit.callback(closelog)
+            if lock:
+                try:
+                    lock = get_lock(lock_action, lock, lock_timeout)
+                except LockError:
+                    cls, exc, tb = sys.exc_info()
+                    logger.error('%s; aborting', exc.args[0])
+                    if email:
+                        msg = message % (
+                            ','.join(email),
+                            'job failed:  %s' % (email_subject or job[0].split('/')[-1]),
+                            exc.args[0],
+                            )
+                        mail(mail_server, 25, msg)
+                        syslog(LOG_INFO, '[from %s] failed; mail sent <%r>' % (ppid, exc.args[0]))
+                    else:
+                        syslog(LOG_INFO, '[from %s] failed <%r>' % (ppid, exc.args[0]))
+                    sys.exit(Exit.TempFail)
+                else:
+                    logger.debug('lock obtained')
+            logger.info('running job: %s', ' '.join(job))
+            result = Job(job, env=job_env)
+            if lock:
+                lock.seal(result.pid)
+                logger.debug('lock sealed for PID: %d', result.pid)
             try:
-                lock = get_lock(lock_action, lock, lock_timeout)
-            except LockError:
-                cls, exc, tb = sys.exc_info()
-                logger.error('%s; aborting', exc.args[0])
+                result.communicate(timeout=job_timeout)
+            except TimeoutError:
+                pass
+            finally:
+                result.close()
+                if lock:
+                    lock.release()
+            stop = time()
+            elapsed = stop - start
+            msg = None
+            body = [
+                    'job:  %s' % ' '.join(job),
+                    'pid:  %s' % result.pid,
+                    'return code: %s' % result.returncode,
+                    'time to run: approximately %d minutes %d seconds' % divmod(elapsed, 60),
+                    ]
+            if (check_stdout and 'ERROR' in result.stdout) or result.returncode or result.stderr:
+                failed = True
+                if result.stdout:
+                    body.append('stdout\n======\n%s' % result.stdout)
+                if result.stderr:
+                    body.append('stderr\n======\n%s' % result.stderr)
                 if email:
+                    print('error encountered, sending mail')
                     msg = message % (
                         ','.join(email),
                         'job failed:  %s' % (email_subject or job[0].split('/')[-1]),
-                        exc.args[0],
+                        '\n\n'.join(body),
                         )
                     mail(mail_server, 25, msg)
-                    syslog(LOG_INFO, '[from %s] failed; mail sent <%r>' % (ppid, exc.args[0]))
+                    syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
                 else:
-                    syslog(LOG_INFO, '[from %s] failed <%r>' % (ppid, exc.args[0]))
-                sys.exit(Exit.TempFail)
+                    syslog(LOG_INFO, '[from %s] failed' % ppid)
+                    print('\n\n'.join(body), file=stderr)
             else:
-                logger.debug('lock obtained')
-        logger.info('running job: %s', ' '.join(job))
-        result = Job(job, env=job_env)
-        if lock:
-            lock.seal(result.pid)
-            logger.debug('lock sealed for PID: %d', result.pid)
-        try:
-            result.communicate(timeout=job_timeout)
-        except TimeoutError:
-            pass
-        finally:
-            result.close()
-            if lock:
-                lock.release()
-        stop = time()
-        elapsed = stop - start
-        msg = None
-        body = [
-                'job:  %s' % ' '.join(job),
-                'pid:  %s' % result.pid,
-                'return code: %s' % result.returncode,
-                'time to run: approximately %d minutes %d seconds' % divmod(elapsed, 60),
-                ]
-        if (check_stdout and 'ERROR' in result.stdout) or result.returncode or result.stderr:
-            failed = True
-            if result.stdout:
-                body.append('stdout\n======\n%s' % result.stdout)
-            if result.stderr:
-                body.append('stderr\n======\n%s' % result.stderr)
-            if email:
-                print('error encountered, sending mail')
-                msg = message % (
-                    ','.join(email),
-                    'job failed:  %s' % (email_subject or job[0].split('/')[-1]),
-                    '\n\n'.join(body),
-                    )
-                mail(mail_server, 25, msg)
-                syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
-            else:
-                syslog(LOG_INFO, '[from %s] failed' % ppid)
-                print('\n\n'.join(body), file=stderr)
-        else:
-            # options | stdout | email result
-            #    H    |   yes  | heartbeat
-            #    H    |   no   | heartbeat
-            #    HC   |   no   | heartbeat
-            #    HC   |   yes  | capture
-            #    C    |   yes  | capture
-            #    C    |   no   | none
-            if heartbeat and not (capture and result.stdout):
-                print('sending heartbeat')
-                msg = message % (
-                    ','.join(email),
-                    'job heartbeat: %s' % (email_subject or job[0].split('/')[-1]),
-                    '\n\n'.join(body),
-                    )
-                mail(mail_server, 25, msg)
-            if capture and result.stdout:
+                # options | stdout | email result
+                #    H    |   yes  | heartbeat
+                #    H    |   no   | heartbeat
+                #    HC   |   no   | heartbeat
+                #    HC   |   yes  | capture
+                #    C    |   yes  | capture
+                #    C    |   no   | none
+                if heartbeat and not (capture and result.stdout):
+                    print('sending heartbeat')
+                    msg = message % (
+                        ','.join(email),
+                        'job heartbeat: %s' % (email_subject or job[0].split('/')[-1]),
+                        '\n\n'.join(body),
+                        )
+                    mail(mail_server, 25, msg)
+                if capture and result.stdout:
+                    if result.stdout:
+                        body.append('stdout\n======\n%s' % result.stdout)
+                    print('catch and release')
+                    msg = message % (
+                        ','.join(email),
+                        'job:  %s' % (email_subject or job[0].split('/')[-1]),
+                        '\n\n'.join(body),
+                        )
+                    mail(mail_server, 25, msg)
+                if msg:
+                    syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
+                else:
+                    syslog(LOG_INFO, '[from %s] succeeded' % ppid)
+            if passthrough or (failed and not email):
+                print('relaying job output')
                 if result.stdout:
-                    body.append('stdout\n======\n%s' % result.stdout)
-                print('catch and release')
-                msg = message % (
-                    ','.join(email),
-                    'job:  %s' % (email_subject or job[0].split('/')[-1]),
-                    '\n\n'.join(body),
-                    )
-                mail(mail_server, 25, msg)
-            if msg:
-                syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
-            else:
-                syslog(LOG_INFO, '[from %s] succeeded' % ppid)
-        if passthrough or (failed and not email):
-            print('relaying job output')
-            if result.stdout:
-                print(result.stdout, verbose=0, end='')
-            if result.stderr:
-                print(result.stderr, end='', file=sys.stderr)
-        if failed:
-            sys.exit(result.returncode or Exit.Unknown)
+                    print(result.stdout, verbose=0, end='')
+                if result.stderr:
+                    print(result.stderr, end='', file=sys.stderr)
+        if retry_job:
+            retry_job -= 1
+        else:
+            break
+    if failed:
+        sys.exit(result.returncode or Exit.Unknown)
     sys.exit(result.returncode)
 
 
