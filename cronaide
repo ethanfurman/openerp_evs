@@ -441,7 +441,7 @@ def get_lock(lock_action, lock_file, timeout):
             lock.acquire(timeout=timeout)
         except AlreadyLocked:
             logger.debug('%s: first attempt failed', lock_file)
-            active_pid = lock.stored_pid
+            active_pid = lock.last_read_pid
             try:
                 logger.debug('%s: killing job %r', lock_file, active_pid)
                 os.kill(active_pid, SIGKILL)
