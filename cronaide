@@ -1,4 +1,4 @@
-#!/usr/bin/env python2.7
+#!/usr/local/bin/python
 
 # imports
 from __future__ import print_function
@@ -7,7 +7,7 @@ from antipathy import Path
 from antipathy.path import uPath
 from contextlib2 import ExitStack
 from itertools import groupby
-from pandaemonium import PidLockFile, LockError, AlreadyLocked
+from pandaemonium import PidLockFile, LockError, AlreadyLocked, logger as pandaemonium_logger
 from scription import *
 from signal import SIGKILL
 from socket import getfqdn
@@ -78,13 +78,17 @@ def TimeLapse(time):
         log_file=Spec('file to log to', OPTION, abbrev=None, force_default='/var/log/cronaide.log'),
         )
 def main(log, log_file):
-    global logger
+    global logger, main_logger
     if log:
-        logger = logging.getLogger('cronaide')
-        logger.setLevel(getattr(logging, log))
+        log_level = getattr(logging, log)
+        main_logger = logging.getLogger()
+        main_logger.setLevel(log_level)
         handler = logging.handlers.TimedRotatingFileHandler(log_file, when='W0', backupCount=52)
         handler.setFormatter(Formatter('%(asctime)s %(pid)d %(name)s %(levelname)s: %(message)s'))
-        logger.addHandler(handler)
+        main_logger.addHandler(handler)
+        logger = logging.getLogger('cronaide')
+        logger.setLevel(log_level)
+        pandaemonium_logger.setLevel(log_level)
     else:
         logger = lambda *a, **kw: 0
 
@@ -214,7 +218,6 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
         result = Job(job, env=job_env)
         if lock:
             lock.seal(result.pid)
-            exit.push(lock)
             logger.debug('lock sealed for PID: %d', result.pid)
         try:
             result.communicate(timeout=job_timeout)
@@ -222,11 +225,14 @@ def watch(email, email_subject, job_timeout, capture, heartbeat, passthrough, ch
             pass
         finally:
             result.close()
+            if lock:
+                lock.release()
         stop = time()
         elapsed = stop - start
         msg = None
         body = [
                 'job:  %s' % ' '.join(job),
+                'pid:  %s' % result.pid,
                 'return code: %s' % result.returncode,
                 'time to run: approximately %d minutes %d seconds' % divmod(elapsed, 60),
                 ]
@@ -418,33 +424,38 @@ def check_syslog():
 # supporting routines
 
 def get_lock(lock_action, lock_file, timeout):
+    logger.debug('%s: action -> %r   timeout -> %r', lock_file, lock_action, timeout)
     lock = PidLockFile(lock_file)
+    lock._logger.setLevel(logging.DEBUG)
     if lock_action in (None, 'wait'):
+        logger.debug('%s: waiting', lock_file)
         # wait for lock, quit after timeout if unable to get lock
         try:
             lock.acquire(timeout=timeout)
         except AlreadyLocked:
             raise LockError('previous job(s) still running after timeout')
     elif lock_action == 'kill':
-        lock.is_stale(timeout=1)
-        orgpid = lock.stored_pid
+        logger.debug('%s: kill', lock_file)
         try:
+            logger.debug('%s: first acquire attempt', lock_file)
             lock.acquire(timeout=timeout)
         except AlreadyLocked:
-            actpid = lock.read_pid()
-            if orgpid is not None and orgpid != actpid:
-                raise LockError('previous job ended, another job took its place')
-            else:
-                try:
-                    os.kill(actpid, SIGKILL)
-                except OSError:
-                    exc = sys.exc_info()[1]
-                    if exc.errno != errno.ESRCH:
-                        raise LockError('error killing previous job')
-                try:
-                    lock.acquire(timeout=random.randint(1, 5))
-                except LockError:
-                    raise LockError('unable to obtain lock')
+            logger.debug('%s: first attempt failed', lock_file)
+            active_pid = lock.stored_pid
+            try:
+                logger.debug('%s: killing job %r', lock_file, active_pid)
+                os.kill(active_pid, SIGKILL)
+            except OSError:
+                exc = sys.exc_info()[1]
+                if exc.errno != errno.ESRCH:
+                    raise LockError('error killing previous job')
+            try:
+                logger.debug('%s: second acquire attempt', lock_file)
+                lock.acquire(timeout=random.randint(1, 5))
+            except LockError:
+                exc = sys.exc_info()[1]
+                lock.error('%s: second attempt failed with <%s>', lock_file, exc)
+                raise LockError('unable to obtain lock')
     else:
         abort('unknown option for LOCK_ACTION: %r' % lock_action)
     return lock
