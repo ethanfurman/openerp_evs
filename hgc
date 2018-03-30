@@ -32,15 +32,18 @@ def incoming(*path):
     """
     for repo in workhorse(*path):
         history = Execute(('hg incoming'), timeout=30, cwd=repo)
-        if history.stderr:
+        stdout = history.stdout
+        stderr = history.stderr
+        if stderr or stdout:
             print repo
             print '=' * 76
-            print history.stderr
-        if not history.stdout.strip().endswith('no changes found'):
-            print repo
-            print '=' * 76
-            print history.stdout
-            print
+            if not stdout.strip().endswith('no changes found'):
+                print stdout
+                print
+            if stderr:
+                print stderr
+                print
+        print
 
 @Command(
     date=('date to check for commits [YYYY-MM-DD]', REQUIRED),
@@ -50,34 +53,40 @@ def log_date(date, *path):
     "displays all log entries for matching date"
     for repo in workhorse(*path):
         history = Execute(('hg', 'log', '--date', date), timeout=30, cwd=repo)
-        if history.stderr:
+        stdout = history.stdout
+        stderr = history.stderr
+        if stderr or stdout:
             print repo
             print '=' * 76
-            print history.stderr
-        if history.stdout:
-            print repo
-            print '=' * 76
-            print history.stdout
-            print
+            if stdout:
+                print stdout
+                print
+            if stderr:
+                print stderr
+                print
+        print
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
     )
 def outgoing(*path):
     """
-    displays changesets in remote repo not present locally
+    displays changesets in local repo not present remotely
     """
     for repo in workhorse(*path):
         history = Execute(('hg outgoing'), timeout=30, cwd=repo)
-        if history.stderr:
+        stdout = history.stdout
+        stderr = history.stderr
+        if stderr or stdout:
             print repo
             print '=' * 76
-            print history.stderr
-        if not history.stdout.strip().endswith('no changes found'):
-            print repo
-            print '=' * 76
-            print history.stdout
-            print
+            if not stdout.strip().endswith('no changes found'):
+                print stdout
+                print
+            if stderr:
+                print stderr
+                print
+        print
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -86,15 +95,18 @@ def parent(*path):
     "displays parent of active branch"
     for repo in workhorse(*path):
         history = Execute(('hg', 'parent', '--template', '{rev}: {desc}'), timeout=30, cwd=repo)
-        if history.stderr:
+        stdout = history.stdout
+        stderr = history.stderr
+        if stderr or stdout:
             print repo
             print '=' * 76
-            print history.stderr
-        if history.stdout:
-            print repo
-            print '=' * 76
-            print history.stdout
-            print
+            if stdout:
+                print stdout
+                print
+            if stderr:
+                print stderr
+                print
+        print
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -125,12 +137,15 @@ def pull(repo, *path):
         print repo
         print '=' * 76
         history = Execute(('hg', 'pull'), timeout=30, cwd=repo, password=password, pty=True)
-        if history.stderr:
-            print repo
-            print '=' * 76
-            print history.stderr
-        if not history.stdout.strip().endswith('no changes found') or history.returncode:
-            print history.stdout
+        stdout = history.stdout
+        stderr = history.stderr
+        returncode = history.returncode
+        if not stdout.strip().endswith('no changes found') or returncode:
+            print stdout
+            print
+        if stderr:
+            print stderr
+            print
         print
 
 @Command(
@@ -149,12 +164,15 @@ def push(repo, *path):
         print repo
         print '=' * 76
         history = Execute(('hg', 'push'), timeout=30, cwd=repo, password=password, pty=True)
-        if history.stderr:
-            print repo
-            print '=' * 76
-            print history.stderr
-        if not history.stdout.strip().endswith('no changes found') or history.returncode not in (0, 1):
-            print history.stdout
+        stdout = history.stdout
+        stderr = history.stderr
+        returncode = history.returncode
+        if not stdout.strip().endswith('no changes found') or returncode not in (0, 1):
+            print stdout
+            print
+        if stderr:
+            print stderr
+            print
         print
 
 @Command(
@@ -170,12 +188,15 @@ def status(*path):
         history = Execute(('hg', 'status'), timeout=30, cwd=repo)
         parent = Execute(('hg', 'parent'), timeout=30, cwd=repo)
         latest = Execute(('hg', 'log', '-l1'), timeout=30, cwd=repo)
-        if history.stderr:
-            print repo
-            print '=' * 76
-            print history.stderr
-        if history.stdout or history.returncode:
-            print history.stdout
+        stdout = history.stdout
+        stderr = history.stderr
+        returncode = history.returncode
+        if stdout or returncode:
+            print stdout
+            print
+        if stderr:
+            print stderr
+            print
         if parent.stdout != latest.stdout:
             print
             print 'latest version ' + latest.stdout[15:]
@@ -197,20 +218,27 @@ def update(repo, *path):
         print repo
         print '=' * 76
         history = Execute(('hg', 'update', 'default'), timeout=30, cwd=repo)
-        if history.stderr:
-            print repo
-            print '=' * 76
-            print history.stderr
-        stdout = history.stdout.strip().split('\n')
+        stdout = history.stdout
+        stderr = history.stderr
+        returncode = history.returncode
+        stdout = stdout.strip().split('\n')
         last_line = ''
         if stdout:
             last_line = stdout[-1]
-        if last_line != '0 files updated, 0 files merged, 0 files removed, 0 files unresolved' or history.returncode:
-            print history.stdout
+        if last_line == '0 files updated, 0 files merged, 0 files removed, 0 files unresolved' and not returncode:
+            stdout = None
+        if stderr or stdout:
+            print repo
+            print '=' * 76
+        if stdout:
+            print '\n'.join(stdout)
+            print
+        if stderr:
+            print stderr
+            print
         parent = Execute(('hg', 'parent'), timeout=30, cwd=repo)
         latest = Execute(('hg', 'log', '-l1'), timeout=30, cwd=repo)
         if parent.stdout != latest.stdout:
-            print
             print 'latest version ' + latest.stdout[15:]
             print 'running version ' + parent.stdout[16:]
         print
