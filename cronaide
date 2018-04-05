@@ -23,6 +23,8 @@ import re
 import traceback
 import sys
 
+SCRIPTION_ERROR_EXIT_OKAY = False
+
 # load configuration file
 try:
     execfile('/etc/cronaide.conf')
@@ -163,10 +165,12 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
     If the LOCK-* options are not specified, or LOCK_ACTION is kill, LOCK-TIMEOUT is
     how long JOB is allowed to run before killing it;
     """
+    global SCRIPTION_ERROR_EXIT_OKAY
     if not email and (capture or heartbeat):
         abort('if CAPTURE or HEARTBEAT is specified then EMAIL must also be specified')
     job_env = os.environ.copy()
     if virtualenv:
+        print('setting virtualenv')
         if not virtualenv.exists('bin/activate'):
             abort('cannot find a virtualenv at %s' % (virtualenv, ))
         if job_env.get('VIRTUAL_ENV'):
@@ -183,6 +187,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
         if 'PYTHONHOME' in job_env:
             del job_env['PYTHONHOME']
     if lock or lock_action:
+        print('getting lock name')
         logger.debug('lock_action: %s', lock_action)
         if lock is None:
             lock = script_commands[script_command_name].__scription__['lock']._script_default
@@ -193,13 +198,17 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
     try:
         pid_lock = None
         while "trying to run job":
+            print('preparing to run job')
             failed = False
             start = time()
             syslog(LOG_INFO, '[from %s] start: %s' % (ppid, ' '.join(sys.argv)))
             if lock:
+                print('getting lock... ', end='')
                 try:
                     pid_lock = get_lock(lock_action, lock, lock_timeout)
+                    print('succeeded')
                 except LockError:
+                    print('failed')
                     cls, exc, tb = sys.exc_info()
                     logger.error('%s; aborting', exc.args[0])
                     if email:
@@ -215,18 +224,24 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     sys.exit(Exit.TempFail)
                 else:
                     logger.debug('lock obtained')
+            print('running job:', job)
             logger.info('running job: %s', ' '.join(job))
             result = Job(job, env=job_env)
             if pid_lock:
+                print('sealing lock')
                 pid_lock.seal(result.pid)
                 logger.debug('lock sealed for PID: %d', result.pid)
             try:
+                print('communicating with job')
                 result.communicate(timeout=job_timeout)
             except TimeoutError:
+                print('job timed out')
                 pass
             finally:
+                print('closing job')
                 result.close()
                 if pid_lock:
+                    print('releasing lock')
                     pid_lock.release()
             stop = time()
             elapsed = stop - start
@@ -304,6 +319,8 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
     finally:
         closelog()
     if failed:
+        if result.returncode == Exit.ScriptionError:
+            SCRIPTION_ERROR_EXIT_OKAY = True
         sys.exit(result.returncode or Exit.Unknown)
     sys.exit(result.returncode)
 
@@ -530,8 +547,13 @@ if __name__ == '__main__':
         cls, exc, tb = sys.exc_info()
         if isinstance(exc, SystemExit):
             exit_code = exc.args[-1]
-            if exit_code == Exit.ScriptionError:
-                emergency_mail("error with cronaide parameters:\n\n\%s" % script_module['script_abort_message'])
+            if exit_code == Exit.ScriptionError and not SCRIPTION_ERROR_EXIT_OKAY:
+                emergency_mail(
+                        "error with cronaide parameters:\n\n%s\n\n%s"
+                        % (
+                            script_module['script_abort_message'],
+                            traceback.format_exc(),
+                        ))
         else:
             emergency_mail(traceback.format_exc())
         raise
