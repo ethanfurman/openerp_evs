@@ -191,6 +191,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
     ppid = os.getppid()
     openlog('AIDE', LOG_PID, LOG_CRON)
     try:
+        pid_lock = None
         while "trying to run job":
             failed = False
             start = time()
