@@ -1,4 +1,4 @@
-#!/usr/local/bin/python
+#!/usr/bin/python
 
 # imports
 from __future__ import print_function
@@ -80,7 +80,7 @@ def TimeLapse(time):
         )
 def main(log, log_file):
     global logger, main_logger
-    if log:
+    if log and os.getuid() == 0:
         log_level = getattr(logging, log)
         main_logger = logging.getLogger()
         main_logger.setLevel(log_level)
@@ -92,6 +92,10 @@ def main(log, log_file):
         pandaemonium_logger.setLevel(log_level)
     else:
         logger = lambda *a, **kw: 0
+        logger.info = lambda *a, **kw: 0
+        logger.debug = lambda *a, **kw: 0
+        logger.warning = lambda *a, **kw: 0
+        logger.error = lambda *a, **kw: 0
 
 
 @Command(
