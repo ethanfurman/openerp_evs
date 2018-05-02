@@ -21,6 +21,7 @@ from antipathy import Path
 from scription import *
 from time import time
 
+# API
 @Command(
         path=Spec('path to examine', REQUIRED, None, default=Path.getcwd()),
         include_files=('show files', FLAG, 'f'),
@@ -29,8 +30,9 @@ from time import time
         hidden=('show hidden files/directories', FLAG),
         links=('follow links', FLAG, 'l'),
         depth=Spec('limit recursion to x levels', OPTION, type=int, default=None),
+        usage=('show disk usage', FLAG),
         )
-def tree(path, include_files, omit_dirs, hidden, links, depth, time_it=False, _prefix=''):
+def tree(path, include_files, omit_dirs, hidden, links, depth, usage, time_it=False, _prefix=''):
     if path.isfile() or not path.exists():
         abort('%s is not a valid path' % (path, ))
     if omit_dirs and isinstance(omit_dirs[0], unicode):
@@ -38,7 +40,7 @@ def tree(path, include_files, omit_dirs, hidden, links, depth, time_it=False, _p
     if time_it:
         start = time()
     if not _prefix:
-        print(path/'', sep='', verbose=0)
+        echo(path/'', '[%s]' % size_of_dir(path))
     if depth is not None:
         depth -= 1
     for current, dirs, files in path.walk():
@@ -49,33 +51,79 @@ def tree(path, include_files, omit_dirs, hidden, links, depth, time_it=False, _p
         if not hidden:
             files[:] = [f for f in files if not f.startswith('.')]
             dirs[:] = [d for d in dirs if not d.startswith('.')]
+        #
         dirs.sort()
-        files.sort()
-        last_dir = last_file = None
-        if files and not dirs:
-            last_file = files.pop()
-        if dirs:
-            last_dir = dirs.pop()
-        for file in files:
-            link = ('', ' [l]')[(current/file).islink()]
-            print(_prefix, '|-- ', file, link, sep='', verbose=0)
-        if last_file:
-            link = ('', ' [l]')[(current/last_file).islink()]
-            print(_prefix, '`-- ', last_file, link, sep='', verbose=0)
+        print_dirs = []
         for dir in dirs:
+            size = ''
+            if usage:
+                size = '--| %7s |--' % size_of_dir(current/dir)
             link = ('', ' [l]')[(current/dir).islink()]
-            print(_prefix, '|-- ', dir, '/', link, sep='', verbose=0)
+            dir = '|-- %s %s' % (dir, link)
+            print_dirs.append((dir, size, '|  '))
+        if print_dirs:
+            pdir, size, add_prefix = print_dirs[-1]
+            pdir = pdir.replace('|-- ', '`-- ')
+            print_dirs[-1] = (pdir, size, '   ')
+        #
+        files.sort()
+        new_files = []
+        for file in files:
+            size = ''
+            if usage:
+                size = '--| %7s |--' % size_of_file(current/file)
+            link = ('', ' [l]')[(current/file).islink()]
+            file = '|-- %s %s' % (file, link)
+            new_files.append((file, size))
+        files = new_files
+        if files and not dirs:
+            file, size = files[-1]
+            file = file.replace('|-- ', '`-- ')
+            files[-1] = (file, size)
+        #
+        for file, size in files:
+            leader = '%s%s' % (_prefix, file)
+            echo('%-70s%s' % (leader, size))
+        for dir, (pdir, size, add_prefix) in zip(dirs, print_dirs):
+            leader = '%s%s' % (_prefix, pdir)
+            echo('%-70s%s' % (leader, size))
             if links or not (current/dir).islink():
                 if depth is None or depth >= 0:
-                    tree(current/dir, include_files, omit_dirs, hidden, links, depth=depth, _prefix=_prefix+'|  ')
-        if last_dir:
-            link = ('', '[l]')[(current/last_dir).islink()]
-            print(_prefix, '`-- ', last_dir, '/', link, sep='', verbose=0)
-            if links or not (current/last_dir).islink():
-                if depth is None or depth >= 0:
-                    tree(current/last_dir, include_files, omit_dirs, hidden, links, depth=depth, _prefix=_prefix+'   ')
+                    tree(
+                            current/dir,
+                            include_files,
+                            omit_dirs,
+                            hidden,
+                            links,
+                            depth=depth,
+                            usage=usage,
+                            _prefix=_prefix+add_prefix,
+                            )
         dirs[:] = []
     if time_it:
         end = time()
-        print('\n', '%5.2f seconds have elapsed' % (end-start), sep='', verbose=0)
+        echo('\n', '%5.2f seconds have elapsed' % (end-start), sep='')
+
+# helpers
+
+def size_of_dir(dir):
+    "return human readable sizes directories"
+    total = sum([(dir/f).stat().st_size for f in dir.listdir()])
+    return pretty_size(total)
+
+def size_of_file(file):
+    "return human readable sizes of files"
+    total = file.stat().st_size
+    return pretty_size(total)
+
+def pretty_size(size):
+    "convert to human readable size"
+    for prefix in ('kb', 'mb', 'gb', 'tb', 'pb', 'eb', 'zb', 'yb'):
+        if size > 1024:
+            size /= 1024
+        else:
+            break
+    string = '%s %s' % (size, prefix)
+    return string
+
 Run()
