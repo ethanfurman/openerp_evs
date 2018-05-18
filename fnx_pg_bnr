@@ -255,7 +255,9 @@ def list(date, file, daily, monthly):
             echo(file)
     else:
         print('  list::3', verbose=2)
-        if date:
+        if not date:
+            found = [file]
+        else:
             found = DAILY_STORAGE.glob('%s*' % date)
             if not found:
                 print('  list::4', verbose=2)
