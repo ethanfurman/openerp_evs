@@ -70,8 +70,8 @@ def install_to_opt_bin(repo):
             src, dst = names
             src = repo/src
             dst = opt_bin/dst
-            if not dst.path.exists():
-                dst.path.mkdir()
+            if not dst.dirname.exists():
+                dst.dirname.mkdir()
             src.copy(dst)
         else:
             abort('THIS SHOULD NOT HAPPEN -- unable to process %d-item line: <%r>' % (len(names), line))
