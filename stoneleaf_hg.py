@@ -7,7 +7,7 @@ def update_owner(ui, repo, **kwds):
     url = repo.url()
     if url.startswith('file:'):
         home = url[5:]
-        job = Execute('/usr/local/bin/hgupdate set-owner-of %s' % home)
+        job = Execute('/opt/bin/evs/hgupdate set-owner-of %s' % home)
         echo(job.stdout, end='')
         error(job.stderr, end='')
         return job.returncode
@@ -19,7 +19,7 @@ def update_permissions(ui, repo, **kwds):
     url = repo.url()
     if url.startswith('file:'):
         home = url[5:]
-        job = Execute('/usr/local/bin/hgupdate add-group-write-to %s' % home)
+        job = Execute('/opt/bin/evs/hgupdate add-group-write-to %s' % home)
         echo(job.stdout, end='')
         error(job.stderr, end='')
         return job.returncode
@@ -31,7 +31,7 @@ def install_files(ui, repo, **kwds):
     url = repo.url()
     if url.startswith('file:'):
         home = url[5:]
-        job = Execute('/usr/local/bin/hgupdate install-to-opt-bin %s' % home)
+        job = Execute('/opt/bin/evs/hgupdate install-to-opt-bin %s' % home)
         echo(job.stdout, end='')
         error(job.stderr, end='')
         return job.returncode
