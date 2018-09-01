@@ -1,4 +1,4 @@
-#!/usr/local/sbin/suid-python
+#!/usr/local/sbin/suid-python --virtualenv
 from __future__ import print_function
 
 from antipathy import Path
