@@ -286,7 +286,7 @@ def list(date, file, daily, monthly):
 def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     print('  restore::0', verbose=2)
     if (db or all_dbs) and not _user_exists('openerp') and not RESCUE:
-        abort('missing openerp user in postgresql, aborting restore [use --resuce to override]')
+        abort('missing openerp user in postgresql, aborting restore [use --rescue to override]')
     if (user_files or config_files) and (db or all_dbs):
         abort('cannot restore database and files in one pass')
     if date and file:
