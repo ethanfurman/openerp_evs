@@ -47,7 +47,7 @@ def install_to_opt_bin(repo):
     if not repo.exists('.hgupdate_install'):
         print('no such file')
         return
-    lines = open(repo/'.hgupdate_install').readlines()
+    lines = [l.strip() for l in open(repo/'.hgupdate_install').readlines() if l.strip()]
     opt_bin = Path('/opt/bin')
     # pre-screen
     error_lines = []
@@ -55,16 +55,17 @@ def install_to_opt_bin(repo):
         if len(line.split()) not in (1, 2, 3):
             error_lines.append(line)
     if error_lines:
-        abort('unable to process %d lines:\n  %r' % (len(lines), '\n  '.join(error_lines)))
+        abort('unable to process %d lines:\n  %r' % (len(error_lines), '\n  '.join(error_lines)))
     for line in lines:
         names = line.split()
-        suid = True
+        suid = False
         if names[-1] in ('--suid', '--no-suid'):
             suid = names[-1] == '--suid'
             names.pop()
         if len(names) == 1:
             src = repo/names[0]
             dst = opt_bin/(src.filename)
+            echo('  %s --> %s' % (names[0], dst))
             src.copy(dst)
         elif len(names) == 2:
             src, dst = names
@@ -72,6 +73,7 @@ def install_to_opt_bin(repo):
             dst = opt_bin/dst
             if not dst.dirname.exists():
                 dst.dirname.mkdir()
+            echo('  %s --> %s' % (names[0], dst))
             src.copy(dst)
         else:
             abort('THIS SHOULD NOT HAPPEN -- unable to process %d-item line: <%r>' % (len(names), line))
