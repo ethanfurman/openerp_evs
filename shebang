@@ -1,3 +1,4 @@
+#!/usr/local/sbin/suid-python --virtualenv
 """
 rewrites the shebang line of evs scripts to start with the same
 interpreter that is running this script -- hence, no shebang line
@@ -13,12 +14,13 @@ also installs stoneleaf_hg.py into sys.path; order of preference:
 """
 
 from antipathy import Path
+import os
 import re
 import sys
 
 new_shebang = '#!' + sys.executable
 bins = (
-    Path('/opt/openerp/bin'),
+    Path('/opt/bin'),
     Path('/usr/local/bin/'),
     Path('/usr/local/sbin/'),
     Path('/usr/bin/'),
@@ -54,7 +56,7 @@ def combinate(iter1, iter2):
 
 for module in ('stoneleaf_hg.py', 'hg_tools.py'):
     for preference, dest in combinate(
-            ('/opt/openerp/lib/python.*/site-packages$',
+            ('%s/lib/python.*/site-packages$' % os.environ['VIRTUAL_ENV'],
             '/usr/local/lib/.*/site-packages$',
             '/usr/local/lib/.*/dist-packages$',
             '.*/pymodules/python%d.%d$' % sys.version_info[:2],
