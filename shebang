@@ -18,6 +18,7 @@ import sys
 
 new_shebang = '#!' + sys.executable
 bins = (
+    Path('/opt/openerp/bin'),
     Path('/usr/local/bin/'),
     Path('/usr/local/sbin/'),
     Path('/usr/bin/'),
@@ -37,7 +38,7 @@ for current, dirs, files in Path.walk('.'):
         data = open(f).read()
         first_line, data = data.split('\n', 1)
         fh = b.open(f, 'w')
-        if first_line[:2] != '#!' or 'python' not in first_line or 'suid-python' in first_line:
+        if True: #first_line[:2] != '#!' or 'python' not in first_line or 'suid-python' in first_line:
             print('%s: not changing shebang' % f)
             fh.write(first_line + '\n')
         else:
@@ -51,20 +52,20 @@ def combinate(iter1, iter2):
         for j in iter2:
             yield i, j
 
-stoneleaf_hg = Path('stoneleaf_hg.py')
-if stoneleaf_hg.exists():
-    for preference, path in combinate(
-            ('/usr/local/lib/.*/site-packages$',
+for module in ('stoneleaf_hg.py', 'hg_tools.py'):
+    for preference, dest in combinate(
+            ('/opt/openerp/lib/python.*/site-packages$',
+            '/usr/local/lib/.*/site-packages$',
             '/usr/local/lib/.*/dist-packages$',
             '.*/pymodules/python%d.%d$' % sys.version_info[:2],
             ),
             sys.path,
             ):
-        if re.match(preference, path):
+        if re.match(preference, dest):
             break
     else:
-        print('unable to locate destination for stoneleaf_hg.py')
+        print('unable to locate destination for', module)
         raise SystemExit(1)
-    print('copying %s to %s' % (stoneleaf_hg, path))
-    stoneleaf_hg.copy(path)
+    print('copying %s to %s' % (module, dest))
+    Path(module).copy(dest)
 
