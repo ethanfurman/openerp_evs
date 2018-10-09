@@ -225,6 +225,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                         syslog(LOG_INFO, '[from %s] failed; mail sent <%r>' % (ppid, exc.args[0]))
                     else:
                         syslog(LOG_INFO, '[from %s] failed <%r>' % (ppid, exc.args[0]))
+                        error(exc.args[0])
                     sys.exit(Exit.TempFail)
                 else:
                     logger.debug('lock obtained')
