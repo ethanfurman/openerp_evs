@@ -2,7 +2,7 @@
 
 from getpass import getpass
 from antipathy import Path
-from scription import Command, Execute, Main, OPTION, REQUIRED
+from scription import Command, Execute, Main, OPTION, REQUIRED, user_ids
 
 search = (
     Path('/usr/lib/pymodules/python2.7'),
@@ -242,4 +242,6 @@ def update(repo, *path):
             print 'latest version ' + latest.stdout[15:]
             print 'running version ' + parent.stdout[16:]
         print
-Main()
+
+with user_ids(0, 0):
+    Main()
