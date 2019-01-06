@@ -6,6 +6,10 @@ from scription import *
 
 import grp
 import pwd
+import sys
+
+self = Path(sys.argv[0])
+mode = self.stat().st_mode
 
 @Command(
         repo=Spec('root directory of repo', type=Path),
@@ -86,4 +90,9 @@ def install_to_opt_bin(repo):
             dst.chmod(0o6755)
 
 
-Main()
+with user_ids(0, 0):
+    try:
+        Main()
+    finally:
+        if self.stat().st_mode != mode:
+            self.chmod(mode)
