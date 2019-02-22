@@ -28,7 +28,7 @@ def hgissuecheck(local):
         else:
             commandline.extend([
                 'ssh',
-                'ethan@openerp.sunridgefarms.com',
+                'ethan@%s' % issue.host,
                 'VIRTUAL_ENV=/opt/openerp',
                 'PATH=/opt/openerp/bin:$PATH',
                 '/opt/bin/project_status',
