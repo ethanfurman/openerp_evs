@@ -38,8 +38,11 @@ except:
     mail_server = 'localhost'
     notify_list = ['root@localhost']
 
-# and helper
-def TimeLapse(time):
+# and helpers
+
+time_units = {'d':86400, 'h':3600, 'm':60, 's':1}
+
+def time2seconds(time):
     "convert time to seconds (e.g. 2m -> 120)"
     # if all digits, must be seconds already
     if not time:
@@ -62,15 +65,30 @@ def TimeLapse(time):
             continue
         number = int(''.join(digits))
         c = c.lower()
-        if c not in ('hms'):
+        if c not in ('dhms'):
             abort('invalid wait time: %r' % time)
-        wait_time += {'h':3600, 'm':60, 's':1}[c] * number
+        wait_time += time_units[c] * number
         digits = []
     else:
         if digits:
             # didn't specify a unit, abort
             abort('missing trailing time unit of h, m, or s in %r' % time)
     return wait_time
+TimeLapse = time2seconds
+
+def seconds2time(seconds):
+    if seconds < 0:
+        raise ValueError('seconds cannot be negative')
+    result = ''
+    for unit in 'dhms':
+        size = time_units[unit]
+        if seconds < size:
+            continue
+        amount, seconds = divmod(seconds, size)
+        result = ('%s %s%s' % (result, amount, unit)).strip()
+        if seconds == 0:
+            break
+    return result
 
 # API
 
@@ -136,7 +154,7 @@ def self_test():
 @Command(
         email=Spec('Who to send job output to.', MULTI, force_default=notify_list),
         email_subject=Spec('subject to use for email (if any)', OPTION, ('subject', 's')),
-        job_timeout=Spec('allowed time for job', OPTION, abbrev='jt', type=TimeLapse),
+        job_timeout=Spec('allowed time for job', OPTION, abbrev='jt', type=time2seconds),
         retry_job=Spec('number of times to retry job on failure', OPTION, type=int),
         capture=('Send all output to EMAIL', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
@@ -153,7 +171,7 @@ def self_test():
         lock_timeout=Spec(
             'LOCK-ACTION=wait -> amount of time to wait for previous job to finish\n'
             'LOCK-ACTION=kill -> immediately kill previous job if it has been running for LOCK-TIMEOUT',
-            OPTION, abbrev='lt', force_default=-1, type=TimeLapse,
+            OPTION, abbrev='lt', force_default=-1, type=time2seconds,
             ),
         virtualenv=Spec('activate a virtual environment', OPTION, None, type=uPath),
         job=('job to run', REQUIRED, ),
@@ -255,7 +273,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     'job:  %s' % ' '.join(job),
                     'pid:  %s' % result.pid,
                     'return code: %s' % result.returncode,
-                    'time to run: approximately %d minutes %d seconds' % divmod(elapsed, 60),
+                    'time to run: approximately %s' % seconds2time(elapsed),
                     ]
             if (check_stdout and 'ERROR' in result.stdout) or result.returncode or result.stderr:
                 failed = True
@@ -485,10 +503,10 @@ def get_lock(lock_action, lock_file, timeout):
             now = datetime.datetime.now()
             if now - start <= datetime.timedelta(seconds=timeout):
                 logger.debug('%s: previous job within grace period (pid: %s, start: %s, grace period: %s'
-                        % (lock_file, active_pid, start.strftime('%Y-%m-%d %H:%M:%S'), timeout)
+                        % (lock_file, active_pid, start.strftime('%Y-%m-%d %H:%M:%S'), seconds2time(timeout))
                         )
                 abort('previous job within grace period (pid: %s, start: %s, grace: %s)'
-                        % (lock.last_read_pid, lock.last_read_timestamp, timeout)
+                        % (lock.last_read_pid, lock.last_read_timestamp, seconds2time(timeout))
                         )
             else:
                 try:
