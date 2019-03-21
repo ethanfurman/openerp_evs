@@ -1,0 +1,247 @@
+#!/usr/local/sbin/suid-python --virtualenv
+"""
+Produce graphs for various bits of OpenERP
+"""
+
+from __future__ import print_function
+from scription import *
+from antipathy import Path
+from networkx import DiGraph
+import networkx as nx
+import psycopg2
+import os
+
+VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
+
+@Script()
+def setup():
+    global CONFIG
+    CONFIG = OrmFile(VIRTUAL_ENV/'config/server.conf', plain=True)
+
+
+@Command(
+    modules=('module', MULTI),
+    output=('where graph image will be saved', OPTION),
+    complete=('include uninstalled ancestors', FLAG),
+    prog=('program to create graph', OPTION),
+    )
+def ancestors(modules, output, complete, prog='dot'):
+    "show modules that depend on MODULE"
+    G = DiGraph()
+    for m in modules:
+        G.add_node('m')
+    get_ancestors(G, complete, *modules)
+    draw_graph(G, output, prog=prog, modules=modules)
+
+
+@Command(
+    modules=('module', MULTI),
+    output=('where graph image will be saved', OPTION),
+    complete=('include uninstalled ancestors', FLAG),
+    prog=('program to create graph', OPTION),
+    )
+def centered_on(modules, output, complete, prog='dot'):
+    G = DiGraph()
+    for m in modules:
+        G.add_node(m)
+    get_ancestors(G, complete, *modules)
+    get_dependents(G, *modules)
+    draw_graph(G, output, prog=prog, modules=modules)
+
+
+@Command(
+    modules=('module', MULTI),
+    output=('where graph image will be saved', OPTION),
+    prog=('program to create graph', OPTION),
+    )
+def requires(modules, output, prog='dot'):
+    "show dependencies for modules"
+    G = DiGraph()
+    for m in modules:
+        G.add_node('m')
+    get_dependents(G, *modules)
+    draw_graph(G, output, prog=prog, modules=modules)
+
+
+@Command(
+    output=('where graph image will be saved', OPTION),
+    prog=('program to create graph', OPTION),
+    list=('print names, not graph', FLAG),
+    )
+def installed_modules(output, prog='dot', list=False):
+    "create dependency graph for all installed modules"
+    modules = get_installed_modules()
+    print('installed modules are: %r' % modules, verbose=not list)
+    if list:
+        return
+    G = DiGraph()
+    for m in modules:
+        deps = get_info(m)['depends']
+        for d in deps:
+            G.add_edge(m, d)
+    draw_graph(G, output, prog=prog)
+
+
+def get_ancestors(G, complete, *modules):
+    modules_to_check = set(modules)
+    if complete:
+        possible_modules = set()
+        for d in (VIRTUAL_ENV/'openerp/addons').glob('*'):
+            print('checking "%s"...' % d, verbose=3)
+            if d.exists('__openerp__.py'):
+                print('good, adding', verbose=3)
+                possible_modules.add(d.filename)
+            else:
+                print('skipping', verbose=3)
+    else:
+        possible_modules = set(get_installed_modules())
+    does_not_exist = [m for m in modules if m not in possible_modules]
+    if does_not_exist:
+        return
+    # create dependency mapping
+    deps = {}
+    for m in possible_modules:
+        deps[m] = set(get_info(m)['depends'])
+    # create graph of ancestor modules
+    adding = True
+    while adding:
+        adding = False
+        for p, d in deps.items():
+            for m in list(modules_to_check):
+                if m in d and (p, m) not in G.edges:
+                    print('ancestor:  %s -> %s' % (p, m))
+                    kwds = {}
+                    if p in modules or m in modules:
+                        kwds['color'] = 'green'
+                    G.add_edge(p, m, **kwds)
+                    modules_to_check.add(p)
+                    adding = True
+
+def get_dependents(G, *modules):
+    all_modules = set()
+    modules_to_check = set(modules)
+    while True:
+        if not modules_to_check:
+            break
+        print('all_modules: %r' % sorted(all_modules), verbose=3)
+        print('checking:    %r' % sorted(modules_to_check), verbose=3)
+        for m in list(modules_to_check):
+            print('              %r' % m, end='', verbose=3)
+            all_modules.add(m)
+            modules_to_check.remove(m)
+            deps = get_info(m)['depends']
+            print(' -> %r' % deps, verbose=3)
+            for d in deps:
+                print('dependent:  %r -> %r' % (m, d))
+                if d not in all_modules:
+                    modules_to_check.add(d)
+                kwds = {}
+                if m in modules or d in modules:
+                    kwds['color'] = 'orange'
+                G.add_edge(m, d, **kwds)
+
+def draw_graph(G, filename, prog, modules=()):
+    # pos = nx.drawing.nx_agraph.pygraphviz_layout(G)
+    # G.layout(prog='neato')
+    # G.draw(filename)
+    for m in modules:
+        node = G.node[m]
+        node['style'] = 'filled'
+        node['shape'] = 'box'
+    # draw any not-installed modules in red
+    installed_modules = get_installed_modules()
+    missing = set()
+    for n in G.nodes:
+        print('\nchecking node: %r...' % (n, ), end='', verbose=2)
+        if n not in installed_modules:
+            print('colorizing %s' % n, verbose=2)
+            G.node[n]['color'] = 'red'
+            missing.add(n)
+    # draw arrows to missing modules in red
+    for s, d in G.edges:
+        echo(s, d)
+        if s in missing:
+            G.edges[s, d]['color'] = 'red'
+    A = nx.drawing.nx_agraph.to_agraph(G)
+    if prog == 'dot':
+        # dot only
+        # A.graph_attr['ordering'] = 'out'
+        A.graph_attr['newrank'] = True
+    # any
+    A.graph_attr['concentrate'] = True
+    A.graph_attr['pad'] = 0.25
+    A.graph_attr['fontsize'] = 10
+    graph = A.draw(prog=prog, format='png')
+    if filename is not None:
+        echo('opening %r' % filename)
+        with open(filename, 'wb') as graph_file:
+            graph_file.write(graph)
+    else:
+        echo(graph, end='')
+
+def get_installed_modules():
+    "returns names of all installed modules"
+    conn = psycopg2.connect(
+            dbname=CONFIG.options.db_name,
+            user=CONFIG.options.db_user,
+            password=CONFIG.options.db_password,
+            host=CONFIG.options.db_host,
+            port=CONFIG.options.db_port,
+            )
+    try:
+        cur = conn.cursor()
+        cur.execute("select name from ir_module_module where state='installed' or state='to upgrade';")
+        records = cur.fetchall()
+        return sorted([r[0] for r in records])
+    finally:
+        conn.close()
+
+def get_info(module):
+    "returns __openerp__ dictionary of module (taken from OpenERP 7.0://modules/module.py)"
+    terp_file = VIRTUAL_ENV/'openerp/addons'/module/'__openerp__.py'
+    info = {
+        'depends': [],
+        }
+    if terp_file.exists():
+        # default values for description
+        info = {
+            'application': False,
+            'author': '',
+            'auto_install': False,
+            'category': 'Uncategorized',
+            'data': [],
+            'demo': [],
+            'demo_xml': [],
+            'depends': [],
+            'description': '',
+            'init_xml': [],
+            'installable': True,
+            'license': 'AGPL-3',
+            'name': False,
+            'post_load': None,
+            'update_xml': [],
+            'version': '1.0',
+            'web': False,
+            'website': '',
+            'sequence': 100,
+            'summary': '',
+        }
+        f = open(terp_file)
+        try:
+            info.update(eval(f.read()))
+        finally:
+            f.close()
+        if 'active' in info:
+            # 'active' has been renamed 'auto_install'
+            info['auto_install'] = info['active']
+            del info['active']
+        if info['update_xml']:
+            info['data'].extend(info['update_xml'])
+            del info['update_xml']
+    return info
+
+
+
+CONFIG = None
+
+Run()
