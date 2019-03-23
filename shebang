@@ -12,6 +12,7 @@ also installs stoneleaf_hg.py into sys.path; order of preference:
 - /usr/local/lib/.../dist-packages
 - .../pymodules/...
 """
+from __future__ import print_function
 
 from antipathy import Path
 import os
@@ -35,10 +36,17 @@ for current, dirs, files in Path.walk('.'):
         for b in bins:
             if b.exists(f):
                 break
+            else:
+                b = None
         else:
             continue
+        if b is None:
+            continue
+        print()
+        print('reading from: ./%s' % f)
         data = open(f).read()
         first_line, data = data.split('\n', 1)
+        print('writing to:', b/f)
         fh = b.open(f, 'w')
         if True: #first_line[:2] != '#!' or 'python' not in first_line or 'suid-python' in first_line:
             print('%s: not changing shebang' % f)
