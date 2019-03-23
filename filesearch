@@ -2,22 +2,31 @@
 from __future__ import print_function
 from datetime import datetime
 from antipathy import Path
-from scription import Command, Alias, Execute, Run, abort, print, FLAG, OPTION
+from scription import Command, Alias, Execute, Run, abort, print, FLAG, MULTI, OPTION
+import os
 import re
 
 @Command(
         regex=('pattern to match against file and directory names', ),
-        path=('starting path (defaults to cwd)', OPTION, 'p', Path),
+        path=('starting path (defaults to cwd)', MULTI, 'p', Path),
         files_only=('only search file names', FLAG),
         dirs_only=('only search dir names', FLAG),
         timestamp=('display timestamp of file', FLAG),
         hidden=('show hidden files/directories', FLAG),
         execute=('run command on each file found (replaceable options: %one %all)', OPTION),
+        env=('only search in $PATH (implies FILES-ONLY)', FLAG, None),
         )
 @Alias('fs')
-def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, *regex):
+def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, *regex):
     "Searches for directories/files that match REGEX in PATH."
-    print('searching %s for %r ' % (path, regex), ('', '(files only)')[files_only], ('', '(dirs only)')[dirs_only], sep='')
+    if env:
+        if path:
+            abort('cannot specify both PATH and ENV')
+        if dirs_only:
+            abort('cannot specify both DIRS-ONLY and ENV')
+        path = [Path(p) for p in os.environ['PATH'].split(':')]
+        files_only = True
+    print('searching %s for %r ' % (', '.join(path), regex), ('', '(files only)')[files_only], ('', '(dirs only)')[dirs_only], sep='')
     single = True
     if execute:
         if '%all' in execute:
@@ -34,56 +43,61 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, *regex):
         print('and executing %r for each found' % execute)
     base = ''
     if path is None:
-        base = path = Path.getcwd()
+        base = Path.getcwd()
+        path = [base]
     if not regex:
         regex = ('.*', )
-    for tree, dirs, files in path.walk():
-        print('processing', tree)
-        if not execute:
-            print('  ', tree, verbose=2)
-        dirs.sort()
-        files.sort()
-        found_dirs = []
-        skip_dirs = []
-        for d in dirs:
-            for p in regex:
-                if not (hidden or (d.startswith('.') and p.startswith('^\.')) or not d.startswith('.')):
-                    skip_dirs.append(d)
-                elif not files_only:
-                    if re.search(p, d):
-                        target = tree/d-base
-                        if execute:
-                            if single:
-                                command(execute % target)
-                            else:
-                                found_dirs.append(target)
-                        else:
-                            if timestamp:
-                                print(datetime.fromtimestamp((tree/d).stat()[8]), '   ', target, verbose=0)       # mtime
-                            else:
-                                print(target, verbose=0)       # mtime
-        dirs[:] = [d for d in dirs if d not in skip_dirs]
-        if found_dirs:
-            command(execute % ' '.join(found_dirs))
-        if not dirs_only:
-            found_files = []
-            for f in files:
-                for p in regex:
-                    if hidden or (f.startswith('.') and p.startswith('^\.')) or not f.startswith('.'):
-                        if re.search(p, f):
-                            target = tree/f-base
-                            if execute:
-                                if single:
-                                    command(execute % target)
+    for search_path in path:
+        for tree, dirs, files in search_path.walk():
+            print('processing', tree)
+            if not execute:
+                print('  ', tree, verbose=2)
+            dirs.sort()
+            files.sort()
+            found_dirs = []
+            skip_dirs = []
+            if env:
+                dirs[:] = []
+            else:
+                for d in dirs:
+                    for p in regex:
+                        if not (hidden or (d.startswith('.') and p.startswith('^\.')) or not d.startswith('.')):
+                            skip_dirs.append(d)
+                        elif not files_only:
+                            if re.search(p, d):
+                                target = tree/d-base
+                                if execute:
+                                    if single:
+                                        command(execute % target)
+                                    else:
+                                        found_dirs.append(target)
                                 else:
-                                    found_files.append(target)
-                            else:
-                                if timestamp:
-                                    print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', target, verbose=0)       # mtime
+                                    if timestamp:
+                                        print(datetime.fromtimestamp((tree/d).stat()[8]), '   ', target, verbose=0)       # mtime
+                                    else:
+                                        print(target, verbose=0)       # mtime
+                dirs[:] = [d for d in dirs if d not in skip_dirs]
+                if found_dirs:
+                    command(execute % ' '.join(found_dirs))
+            if not dirs_only:
+                found_files = []
+                for f in files:
+                    for p in regex:
+                        if hidden or (f.startswith('.') and p.startswith('^\.')) or not f.startswith('.'):
+                            if re.search(p, f):
+                                target = tree/f-base
+                                if execute:
+                                    if single:
+                                        command(execute % target)
+                                    else:
+                                        found_files.append(target)
                                 else:
-                                    print(target, verbose=0)       # mtime
-            if found_files:
-                command(execute % ' '.join(found_files))
+                                    if timestamp:
+                                        print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', target, verbose=0)       # mtime
+                                    else:
+                                        print(target, verbose=0)       # mtime
+                if found_files:
+                    command(execute % ' '.join(found_files))
 
 def command(command):
     print('executing', command, verbose=2)
