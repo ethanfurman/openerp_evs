@@ -19,6 +19,11 @@ import re
 @Alias('fs')
 def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, *regex):
     "Searches for directories/files that match REGEX in PATH."
+    print('files_only: %r\ndirs_only: %r\ntimestamp: %r\nhidden: %r\npath: %r\nexecute: %r\nenv: %r\nregex: %r'
+            % (files_only, dirs_only, timestamp, hidden, path, execute, env, regex),
+            border='box',
+            verbose=3,
+            )
     if env:
         if path:
             abort('cannot specify both PATH and ENV')
@@ -42,11 +47,16 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, *re
             execute += ' %s'
         print('and executing %r for each found' % execute)
     base = ''
-    if path is None:
+    if not path:
         base = Path.getcwd()
         path = [base]
     if not regex:
         regex = ('.*', )
+    print('files_only: %r\ndirs_only: %r\ntimestamp: %r\nhidden: %r\npath: %r\nexecute: %r\nenv: %r\nregex: %r'
+            % (files_only, dirs_only, timestamp, hidden, path, execute, env, regex),
+            border='box',
+            verbose=3,
+            )
     for search_path in path:
         for tree, dirs, files in search_path.walk():
             print('processing', tree)
