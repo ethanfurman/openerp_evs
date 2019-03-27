@@ -160,6 +160,7 @@ def self_test():
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
         check_stdout=Spec('check for "ERROR" in stdout stream', FLAG, abbrev=None, force_default=True),
+        fail_on_stderr=Spec('report error of any output on stderr stream', FLAG, abbrev=None),
         lock_action=Spec(
             'do LOCK-ACTION if previous job still running',
             OPTION, abbrev='la', choices=['wait', 'kill'],
@@ -177,7 +178,7 @@ def self_test():
         job=('job to run', REQUIRED, ),
         )
 @Alias('cronaide')
-def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, passthrough, check_stdout, lock, lock_timeout, lock_action, virtualenv, *job):
+def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, passthrough, check_stdout, fail_on_stderr, lock, lock_timeout, lock_action, virtualenv, *job):
     """monitor JOB, sending results/status to EMAIL
 
     By default, a locking pid file is used with an immediate timeout, and
@@ -275,7 +276,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     'return code: %s' % result.returncode,
                     'time to run: approximately %s' % seconds2time(elapsed),
                     ]
-            if (check_stdout and 'ERROR' in result.stdout) or result.returncode or result.stderr:
+            if (check_stdout and 'ERROR' in result.stdout) or result.returncode or (fail_on_stderr and result.stderr):
                 failed = True
                 if result.stdout:
                     body.append('stdout\n======\n%s' % result.stdout)
