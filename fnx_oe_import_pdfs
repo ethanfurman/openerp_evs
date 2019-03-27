@@ -1,17 +1,18 @@
-#!/usr/bin/env python2.7
+#!/usr/local/sbin/suid-python --virtualenv
 from __future__ import print_function
 
 from antipathy import Path
 from math import floor
-from openerplib import get_connection, get_records, AttrDict
+from openerplib import get_connection, AttrDict
 from pwd import getpwnam
 from scription import *
 from time import time
 from xaml import Xaml
 
+import os
 import sys
 
-CONFIG = Path('/etc/openerp/fnx.ini')
+CONFIG = Path('%s/config/fnx.ini' % os.environ['VIRTUAL_ENV'])
 
 try:
     settings = OrmFile(CONFIG)
@@ -34,6 +35,7 @@ else:
         pw=('password for login name', OPTION),
         )
 def main(host, db, user, pw):
+    global OE
     if host:
         module.HOST = host
     if db:
@@ -47,8 +49,8 @@ def main(host, db, user, pw):
             raise SystemExit('%r required; use --help for more info' % req)
     if not module.PW:
         module.PW = get_response('password:')
-    module.OE = AttrDict()
-    module.OE.conn = get_connection(hostname=HOST, database=DB, login=USER, password=PW)
+    OE = AttrDict()
+    OE.conn = get_connection(hostname=HOST, database=DB, login=USER, password=PW)
 
 @Command(
         src=Spec('network location of files', ),
@@ -75,8 +77,9 @@ def sync(src, dst):
         path=Spec('location of pdfs to sort and import', type=Path),
         progress=Spec('show progress visually', FLAG),
         id=Spec('id pattern to match', OPTION, type=unicode.upper),
+        max_copies=Spec('how many archival copies to keep [default: no limit]', OPTION, type=int),
         )
-def c_of_a(path, progress, id):
+def c_of_a(path, progress, id, max_copies):
     '''
     copy, move, and sort source pdfs into fnxfs file structure
     '''
@@ -129,8 +132,11 @@ def c_of_a(path, progress, id):
             (fnx_root/base/sub).chmod(0775)
         target = base/sub/file.base.upper() + file.ext.lower()
         source = path/file
-        print('copying (%s) %s to (%s) %s' % (type(source), source, type(target), target))
-        _run('cp', source, target, '--force')
+        print('copying (%s) %s to (%s) %s' % (type(source), source, type(target), target), verbose=2)
+        options = ('--force', '-v')
+        if max_copies:
+            options += ('--max-copies', '%s' % max_copies)
+        _run('cp', source, target, *options)
     product_product = OE.conn.get_model('product.product')
     updated_products = product_product.search_read(fields=['id','xml_id'], domain=[('xml_id','in',list(products))])
     if progress:
@@ -171,7 +177,7 @@ def init():
             (fnx_root/folder).chown(*OPENERP_IDS)
             (fnx_root/folder).chmod(0775)
 
-fnx_root = Path('/var/openerp/fnxfs/')
+fnx_root = Path('%s/var/openerp/fnxfs/' % os.environ['VIRTUAL_ENV'])
 doc_root = Path('Documents')
 sds_root = doc_root/'Safety Data Sheets'
 cofa_root = doc_root/'Certificates of Analysis'
@@ -213,7 +219,8 @@ OPENERP_IDS = getpwnam('openerp')[2:4]
 
 def _run(*command):
     command = list(command)
-    params = ['fnxfs', ] + command #+ ['-v'] * script_verbosity
+    params = ['/usr/local/sbin/fnxfs', ] + command #+ ['-v'] * script_verbosity
+    print(' '.join(params), end='\n\n')
     try:
         exc = None
         dst = stdout

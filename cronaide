@@ -85,7 +85,7 @@ def seconds2time(seconds):
         if seconds < size:
             continue
         amount, seconds = divmod(seconds, size)
-        result = ('%s %s%s' % (result, amount, unit)).strip()
+        result = ('%s %i%s' % (result, amount, unit)).strip()
         if seconds == 0:
             break
     return result

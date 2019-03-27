@@ -55,19 +55,21 @@ def backups():
     else:
         help('invalid network role: %r' % config.network.role)
     daily_files = [
-        (daily_src/d.strftime('%Y-%m-%d') + '_*')
+        p
         for d in xrange(
             Date.today().replace(delta_day=-1),
             step=timedelta(-1),
             count=config.postgres.daily_limit)
+        for p in Path.glob(daily_src/d.strftime('%Y-%m-%d') + '_*')
         ]
+    # below Date dance ensures we are in the previous month if today is the first
     monthly_files = [
-        (monthly_src/d.strftime('%Y-%m-%d') + '_*')
-        # below Date dance ensures we are in the previous month if today is the first
+        p
         for d in xrange(
-            Date.today().replace(day=-1).replace(day=1),
+            Date.today().replace(delta_day=-1).replace(day=1),
             step=lambda initial, i, prev_value: prev_value.replace(delta_month=-1),
             count=config.postgres.monthly_limit)
+        for p in Path.glob(monthly_src/d.strftime('%Y-%m-%d') + '_*')
         ]
     output = []
     command, job = rsync(daily_files, host, daily_dst, to_remote)

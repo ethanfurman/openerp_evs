@@ -16,6 +16,7 @@ import time
 
 VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
 CONFIG_DIR = VIRTUAL_ENV / 'config'
+VAR_OPENERP_DIR = VIRTUAL_ENV / 'var/openerp'
 pg_settings = IniFile(CONFIG_DIR / 'fnx.ini', section='postgres')
 server_config = IniFile(CONFIG_DIR / 'server.conf', section='options', plain=True)
 PGHOST = server_config.db_host
@@ -690,7 +691,7 @@ def _tgz_dbs(source_path, target_path, id=None):
     return target
 
 def _tgz_files(target_path, id=None):
-    # static files/locations are in /var/openerp/
+    # static files/locations are in $CONFIG_DIR/var/openerp/
     # fnxfs.*
     # fnxfs/*
     # location of dynamic store is in openerp at
@@ -710,8 +711,8 @@ def _tgz_files(target_path, id=None):
         for line in result.stderr.split('\n'):
             print('        %s' % line, file=stderr)
         raise SystemExit(result.returncode)
-    targets = Path('/var/openerp').glob('fnxfs.*')
-    targets.append(Path('/var/openerp/fnxfs'))
+    targets = VAR_OPENERP_DIR.glob('fnxfs.*')
+    targets.append(VAR_OPENERP_DIR/'fnxfs')
     targets.append('/tmp/oe_config.tar.gz')
     conn = get_connection(hostname=OEHOST, database=OEDATA, login=OEUSER, password=OEPSWD)
     location = get_records(conn, 'ir.config_parameter', domain=[('key','=','ir_attachment.location')])
