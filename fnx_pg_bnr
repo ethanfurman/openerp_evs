@@ -315,7 +315,10 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
         if len(found_user) > 1:
             abort('should anly have one match, but found %s' % ', '.join(found_user))
         [file] = found
-        [user_file] = found_user
+        if user_files and not found_user:
+            abort('no user files found for %s' % date)
+        elif user_files:
+            [user_file] = found_user
         if user_files:
             file = None
     if not (file or user_file):
