@@ -159,7 +159,7 @@ def self_test():
         capture=('Send all output to EMAIL', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
-        check_stdout=Spec('check for "ERROR" in stdout stream', FLAG, abbrev=None, force_default=True),
+        check_stdout=Spec('check for "ERROR" in stdout stream', FLAG, abbrev=None),
         fail_on_stderr=Spec('report error of any output on stderr stream', FLAG, abbrev=None),
         lock_action=Spec(
             'do LOCK-ACTION if previous job still running',
