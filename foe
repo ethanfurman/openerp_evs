@@ -37,7 +37,7 @@ def backups():
         monthly_dst = config.network.monthly_backup
         host = config.network.slave
         to_remote = True
-        print('moving backups from\n  %s to\n  %s:%s\nand from\n  %s to\n  %s:%s' % (
+        print('moving backups from\n  %s\nto\n  %s:%s\nand from\n  %s\nto\n  %s:%s' % (
             daily_src, host, daily_dst,
             monthly_src, host, monthly_dst,
             ))
@@ -48,7 +48,7 @@ def backups():
         monthly_dst = config.postgres.monthly
         host = config.network.master
         to_remote = False
-        print('moving backups from\n  %s:%s to\n  %s\nand from\n  %s:%s to\n  %s' % (
+        print('moving backups from\n  %s:%s\nto\n  %s\nand from\n  %s:%s\nto\n  %s' % (
             host, daily_src, daily_dst,
             host, monthly_src, monthly_dst,
             ))
