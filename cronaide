@@ -487,7 +487,10 @@ def get_lock(lock_action, lock_file, timeout):
         try:
             lock.acquire(timeout=timeout)
         except AlreadyLocked:
-            raise LockError('previous job(s) still running after timeout')
+            raise LockError(
+                    'previous job still running after timeout:\npid: %s\nlocked: %s\ntimeout: %s'
+                    % (lock.last_read_pid, lock.last_read_timestamp, seconds2time(timeout))
+                    )
     elif lock_action == 'kill':
         logger.debug('%s: kill', lock_file)
         try:
