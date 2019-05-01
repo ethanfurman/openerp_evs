@@ -237,13 +237,13 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     if email:
                         msg = message % (
                             ','.join(email),
-                            'job failed:  %s' % (email_subject or job[0].split('/')[-1]),
+                            'job skipped:  %s' % (email_subject or job[0].split('/')[-1]),
                             exc.args[0],
                             )
                         mail(mail_server, 25, msg)
-                        syslog(LOG_INFO, '[from %s] failed; mail sent <%r>' % (ppid, exc.args[0]))
+                        syslog(LOG_INFO, '[from %s] skipped; mail sent <%r>' % (ppid, exc.args[0]))
                     else:
-                        syslog(LOG_INFO, '[from %s] failed <%r>' % (ppid, exc.args[0]))
+                        syslog(LOG_INFO, '[from %s] skipped <%r>' % (ppid, exc.args[0]))
                         error(exc.args[0])
                     sys.exit(Exit.TempFail)
                 else:
