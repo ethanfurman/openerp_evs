@@ -104,9 +104,16 @@ def fis(complete):
     pre = config.network.fis_data_prefix
     local_path = config.network.fis_data_local_path
     if complete:
-        files = '{path}/{pre}???? {path}/{pre}????? {path}/{pre}??????'.format(path=path, pre=pre).split()
+        files = (
+                '{path}/{pre}???? {path}/{pre}????? {path}/{pre}?????? '
+                '{path}/{pre}????M {path}/{pre}?????M {path}/{pre}??????M '
+                '{path}/{pre}????.txt {path}/{pre}?????.txt {path}/{pre}??????.txt '
+                ).format(path=path, pre=pre).split()
     else:
-        files = ['%s/%s%s' % (path, pre, f) for f in config.network.fis_openerp_files.split()]
+        files = ' '.join([
+            '{path}/{pre}{f} {path}/{pre}{f}M {path}/{pre}{f}.txt'.format(path=path, pre=pre, f=f)
+            for f in config.network.fis_openerp_files.split()
+            ]).split()
     output = []
     try:
         print('calling rsync')
