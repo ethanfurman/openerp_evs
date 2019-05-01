@@ -1,8 +1,10 @@
 #!/usr/local/sbin/suid-python --virtualenv
 
+from __future__ import print_function
+
 from getpass import getpass
 from antipathy import Path
-from scription import Command, Execute, Main, OPTION, REQUIRED, user_ids
+from scription import Command, Execute, Main, OPTION, REQUIRED, user_ids, echo
 
 search = (
     Path('/usr/lib/pymodules/python2.7'),
@@ -35,15 +37,15 @@ def incoming(*path):
         stdout = history.stdout
         stderr = history.stderr
         if stderr or stdout:
-            print repo
-            print '=' * 76
+            echo(repo)
+            echo('=' * 76)
             if not stdout.strip().endswith('no changes found'):
-                print stdout
-                print
+                echo(stdout)
+                echo()
             if stderr:
-                print stderr
-                print
-        print
+                echo(stderr)
+                echo()
+        echo()
 
 @Command(
     date=('date to check for commits [YYYY-MM-DD]', REQUIRED),
@@ -56,15 +58,18 @@ def log_date(date, *path):
         stdout = history.stdout
         stderr = history.stderr
         if stderr or stdout:
-            print repo
-            print '=' * 76
+            echo()
+            echo(repo)
+            echo('=' * 76)
             if stdout:
-                print stdout
-                print
+                echo(stdout.strip())
+            if stdout and stderr:
+                echo('\n--------\n')
             if stderr:
-                print stderr
-                print
-        print
+                echo(stderr.strip())
+        else:
+            echo('.', end='')
+    echo()
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -78,15 +83,15 @@ def outgoing(*path):
         stdout = history.stdout
         stderr = history.stderr
         if stderr or stdout:
-            print repo
-            print '=' * 76
+            echo(repo)
+            echo('=' * 76)
             if not stdout.strip().endswith('no changes found'):
-                print stdout
-                print
+                echo(stdout)
+                echo()
             if stderr:
-                print stderr
-                print
-        print
+                echo(stderr)
+                echo()
+        echo()
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -98,15 +103,15 @@ def parent(*path):
         stdout = history.stdout
         stderr = history.stderr
         if stderr or stdout:
-            print repo
-            print '=' * 76
+            echo(repo)
+            echo('=' * 76)
             if stdout:
-                print stdout
-                print
+                echo(stdout)
+                echo()
             if stderr:
-                print stderr
-                print
-        print
+                echo(stderr)
+                echo()
+        echo()
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -116,7 +121,7 @@ def list(*path):
     displays all repos
     """
     for repo in workhorse(*path):
-        print repo
+        echo(repo)
 
 
 @Command(
@@ -129,24 +134,24 @@ def pull(repo, *path):
     '''
 
     password = getpass('[mercurial] password: ')
-    print
+    echo()
     target = repo
     for repo in workhorse(*path):
         if target and repo.filename != target:
             continue
-        print repo
-        print '=' * 76
+        echo(repo)
+        echo('=' * 76)
         history = Execute(('hg', 'pull'), timeout=30, cwd=repo, password=password, pty=True)
         stdout = history.stdout
         stderr = history.stderr
         returncode = history.returncode
         if not stdout.strip().endswith('no changes found') or returncode:
-            print stdout
-            print
+            echo(stdout)
+            echo()
         if stderr:
-            print stderr
-            print
-        print
+            echo(stderr)
+            echo()
+        echo()
 
 @Command(
     repo=('repository to push [default: all]', OPTION),
@@ -161,19 +166,19 @@ def push(repo, *path):
     for repo in workhorse(*path):
         if target and repo.filename != target:
             continue
-        print repo
-        print '=' * 76
+        echo(repo)
+        echo('=' * 76)
         history = Execute(('hg', 'push'), timeout=30, cwd=repo, password=password, pty=True)
         stdout = history.stdout
         stderr = history.stderr
         returncode = history.returncode
         if not stdout.strip().endswith('no changes found') or returncode not in (0, 1):
-            print stdout
-            print
+            echo(stdout)
+            echo()
         if stderr:
-            print stderr
-            print
-        print
+            echo(stderr)
+            echo()
+        echo()
 
 @Command(
     path=('base path to search', OPTION, 'p', Path),
@@ -183,8 +188,8 @@ def status(*path):
     display status for each repo
     '''
     for repo in workhorse(*path):
-        print repo
-        print '=' * 76
+        echo(repo)
+        echo('=' * 76)
         history = Execute(('hg', 'status'), timeout=30, cwd=repo)
         parent = Execute(('hg', 'parent'), timeout=30, cwd=repo)
         latest = Execute(('hg', 'log', '-l1'), timeout=30, cwd=repo)
@@ -192,16 +197,16 @@ def status(*path):
         stderr = history.stderr
         returncode = history.returncode
         if stdout or returncode:
-            print stdout
-            print
+            echo(stdout)
+            echo()
         if stderr:
-            print stderr
-            print
+            echo(stderr)
+            echo()
         if parent.stdout != latest.stdout:
-            print
-            print 'latest version ' + latest.stdout[15:]
-            print 'running version ' + parent.stdout[16:]
-        print
+            echo()
+            echo('latest version ' + latest.stdout[15:])
+            echo('running version ' + parent.stdout[16:])
+        echo()
 
 @Command(
     repo=('repository to update [default: all]', OPTION),
@@ -215,8 +220,8 @@ def update(repo, *path):
     for repo in workhorse(*path):
         if target and repo.filename != target:
             continue
-        print repo
-        print '=' * 76
+        echo(repo)
+        echo('=' * 76)
         history = Execute(('hg', 'update', 'default'), timeout=30, cwd=repo)
         stdout = history.stdout
         stderr = history.stderr
@@ -228,20 +233,20 @@ def update(repo, *path):
         if last_line == '0 files updated, 0 files merged, 0 files removed, 0 files unresolved' and not returncode:
             stdout = None
         if stderr or stdout:
-            print repo
-            print '=' * 76
+            echo(repo)
+            echo('=' * 76)
         if stdout:
-            print '\n'.join(stdout)
-            print
+            echo('\n'.join(stdout))
+            echo()
         if stderr:
-            print stderr
-            print
+            echo(stderr)
+            echo()
         parent = Execute(('hg', 'parent'), timeout=30, cwd=repo)
         latest = Execute(('hg', 'log', '-l1'), timeout=30, cwd=repo)
         if parent.stdout != latest.stdout:
-            print 'latest version ' + latest.stdout[15:]
-            print 'running version ' + parent.stdout[16:]
-        print
+            echo('latest version ' + latest.stdout[15:])
+            echo('running version ' + parent.stdout[16:])
+        echo()
 
 with user_ids(0, 0):
     Main()
