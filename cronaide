@@ -487,6 +487,8 @@ def get_lock(lock_action, lock_file, timeout):
         try:
             lock.acquire(timeout=timeout)
         except AlreadyLocked:
+            if timeout < 0:
+                timeout = 0
             raise LockError(
                     'previous job still running after timeout:\npid: %s\nlocked: %s\ntimeout: %s'
                     % (lock.last_read_pid, lock.last_read_timestamp, seconds2time(timeout))
