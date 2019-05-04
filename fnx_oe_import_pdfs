@@ -3,11 +3,10 @@ from __future__ import print_function
 
 from antipathy import Path
 from math import floor
-from openerplib import get_connection, AttrDict
+from openerplib import get_connection, get_records
 from pwd import getpwnam
 from scription import *
 from time import time
-from xaml import Xaml
 
 import os
 import sys
@@ -49,8 +48,7 @@ def main(host, db, user, pw):
             raise SystemExit('%r required; use --help for more info' % req)
     if not module.PW:
         module.PW = get_response('password:')
-    OE = AttrDict()
-    OE.conn = get_connection(hostname=HOST, database=DB, login=USER, password=PW)
+    OE = get_connection(hostname=HOST, database=DB, login=USER, password=PW)
 
 @Command(
         src=Spec('network location of files', ),
@@ -95,87 +93,69 @@ def c_of_a(path, progress, id, max_copies):
     #    |-- TUV/
     #    `-- WQYZ/
     # rsync -auv --exclude '.~lock*' root@192.168.2.61:/mnt/virtualxp/JRA_Docs/. /home/JRA_Docs/.
-    if id:
-        print('looking in %s for files matching %s' % (path, id))
+    file_id = id
+    if file_id:
+        print('looking in %s for files matching %s' % (path, file_id))
     else:
         print('looking in %s' % (path, ))
+    product = OE.get_model('product.product')
+    xml_ids = dict([
+        (p['xml_id'], p['id'])
+        for p in get_records(
+            product,
+            domain=[('xml_id','!=',False)],
+            fields=['id','xml_id'],
+            )])
+    target_paths = dict([
+        (p['id'], p['c_of_a'])
+        for p in product.fnxfs_get_paths(
+            ids=xml_ids.values(),
+            fields=['c_of_a'],
+            )])
     files = path.listdir()
     if progress:
         pb = ProgressBar(len(files), message="copying %d files..." % len(files))
-    products = set()
     for file in files:
+        print()
         if progress:
             pb.tick()
         if file.ext.lower() != '.pdf':
-            if not id:
+            if not file_id:
                 print('skipping non-pdf: %r' % file)
             continue
         base = cofa_primary_level.get(file[0].lower())
         if base is None:
-            if not id:
+            if not file_id:
                 print('skipping invalid name: %r  (unable to find base)' % file)
             continue
         if not file[:3].isalpha() or not file[3:8].isdigit() or file[8] not in ' .':
-            if not id:
+            if not file_id:
                 print('skipping invalid name: %s  (bad chars)' % file)
             continue
         sub = file[:8].upper()
-        if id and id not in sub:
+        if file_id and file_id not in sub:
             continue
-        elif id:
+        elif file_id:
             print('processing %s' % file)
-        products.add(sub)
-        if not (fnx_root/base/sub).exists():
-            print('creating folder %s' % (base/sub, ))
-            (fnx_root/base/sub).mkdir()
-            (fnx_root/base/sub).chown(*OPENERP_IDS)
-            (fnx_root/base/sub).chmod(0775)
-        target = base/sub/file.base.upper() + file.ext.lower()
+        id = xml_ids.get(sub)
+        if id is None:
+            error('product %r does not exist in OpenERP' % (sub, ))
+            continue
+        target_path = Path(target_paths[id])
+        if not target_path.exists():
+            print('creating folder %s' % target_path)
+            target_path.mkdir()
+            target_path.chown(*OPENERP_IDS)
+            target_path.chmod(0775)
+        file = file.replace('/','%2f')
+        target = target_path/file.base.upper() + file.ext.lower()
         source = path/file
-        print('copying (%s) %s to (%s) %s' % (type(source), source, type(target), target), verbose=2)
+        print('copying %s to %s' % (source, target), verbose=2)
         options = ('--force', '-v')
         if max_copies:
             options += ('--max-copies', '%s' % max_copies)
         _run('cp', source, target, *options)
-    product_product = OE.conn.get_model('product.product')
-    updated_products = product_product.search_read(fields=['id','xml_id'], domain=[('xml_id','in',list(products))])
-    if progress:
-        pb = ProgressBar(len(updated_products), message='updating html for %d products' % len(updated_products))
-    for product in sorted(updated_products, key=lambda p: p.xml_id):
-        if progress:
-            pb.tick()
-        base = cofa_primary_level.get(product.xml_id[0].lower())
-        sub = product.xml_id.upper()
-        target_dir = fnx_root/base/sub
-        pdfs = target_dir.listdir()
-        pdfs.sort()
-        print('\nproduct', product.xml_id)
-        xaml_line = "~p\n  ~a href='%s': %s"
-        xaml_list = []
-        for pdf in pdfs:
-            xaml_list.append(xaml_line % ('/fnxfs'/base/sub/pdf.filename, pdf.filename))
-        xaml_doc = Xaml('\n'.join(xaml_list)).document.pages[0].string()
-        product_product.write([product.id], {'c_of_a':xaml_doc})
 
-
-@Command()
-def init():
-    'create initial locations that do not yet exist'
-    if not (fnx_root/doc_root).exists():
-        print('creating', doc_root)
-        _run('create-folder', doc_root, '--ro_users', 'all')
-    for folder in (doc_root, cofa_root, sds_root):
-        if not (fnx_root/folder).exists():
-            print('creating', folder)
-            (fnx_root/folder).mkdir()
-            (fnx_root/folder).chown(*OPENERP_IDS)
-            (fnx_root/folder).chmod(0775)
-    for folder in set(cofa_primary_level.values()):
-        if not (fnx_root/folder).exists():
-            print('creating', folder)
-            (fnx_root/folder).mkdir()
-            (fnx_root/folder).chown(*OPENERP_IDS)
-            (fnx_root/folder).chmod(0775)
 
 fnx_root = Path('%s/var/openerp/fnxfs/' % os.environ['VIRTUAL_ENV'])
 doc_root = Path('Documents')
