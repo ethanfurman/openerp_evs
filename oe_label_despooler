@@ -58,14 +58,13 @@ def oe_label_despooler(printer, port):
         for file in source_dir.glob('*.raw'):
             found_files = True
             # extract the quantity from the file name
-            qty = file.stem.split('-')[-1]
+            qty = int(file.stem.split('-')[-1])
             print_file = file.strip_ext() + '.out'
             with file.open() as f:
                 # get custom lines (as tuple for easier interpolation)
                 lines = tuple(f.read().split('\n'))
-            lines = lines * qty
             with print_file.open('wb') as pf:
-                pf.write(raw_template % lines)
+                pf.write((raw_template % lines) * qty)
                 pf.write('\x04')
                 pf.flush()
             cmd = {
