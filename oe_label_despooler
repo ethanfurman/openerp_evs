@@ -1,0 +1,104 @@
+#!/usr/local/sbin/suid-python --virtualenv
+"""
+generate sample labels and send to the printer
+"""
+
+from __future__ import print_function
+from dbf import Time
+from antipathy import Path
+from scription import *
+import commands
+import os
+import time
+
+VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
+
+@Command(
+        printer=Spec('where to send print output', REQUIRED),
+        port=Spec('which port to use [default: 9100]', REQUIRED, force_default=9100),
+        )
+def oe_label_despooler(printer, port):
+    source_dir = VIRTUAL_ENV / 'var/sample_labels'
+    while Time.now().hour < 20:
+        # track work so we can timeout if nothing done
+        found_files = False
+        for file in source_dir.glob('*.src'):
+            found_files = True
+            print_file = file.strip_ext() + '.test'
+            with file.open() as f:
+                # get lines by label
+                labels = f.read().split('\x0c')
+            with print_file.open('wb') as pf:
+                for label in labels:
+                    # extract fields and values
+                    fields = {}
+                    for line in label.split('\n'):
+                        k, v = line.split(':')
+                        k, v = k.strip(), v.strip()
+                        fields[k] = v
+                    # write to .out file
+                    pf.write(txt_template % fields)
+                pf.write('\x04')
+                pf.flush()
+            cmd = {
+                    'pf': print_file,
+                    'host': printer,
+                    'port': port,
+                    }
+            commands.getoutput('cat %(pf) | netcat %(host) %(port)' % cmd)
+            file.unlink()
+        for file in source_dir.glob('*.raw'):
+            found_files = True
+            # extract the quantity from the file name
+            qty = file.stem.split('-')[-1]
+            print_file = file.strip_ext() + '.out'
+            with file.open() as f:
+                # get custom lines (as tuple for easier interpolation)
+                lines = tuple(f.read().split('\n'))
+            lines = lines * qty
+            with print_file.open('wb') as pf:
+                pf.write(raw_template % lines)
+                pf.write('\x04')
+                pf.flush()
+            cmd = {
+                    'pf': print_file,
+                    'host': printer,
+                    'port': port,
+                    }
+            commands.getoutput('cat %(pf) | netcat %(host) %(port)' % cmd)
+            file.unlink()
+        if not found_files:
+            # didn't do anything, take a breather
+            time.sleep(10)
+
+
+
+txt_template = """\r
+  %(product)s \r
+    Lot %(lot)s \r
+    Reference: %(request)s \r
+    Date: %(date)s \r
+
+
+
+
+
+
+
+"""
+
+raw_template = """\r
+%s \r
+%s \r
+%s \r
+%s \r
+
+
+
+
+
+
+
+"""
+
+Main()
