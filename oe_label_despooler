@@ -25,7 +25,7 @@ def oe_label_despooler(printer, port):
         for file in source_dir.glob('*.src'):
             print('processing file:', file, border='overline')
             found_files = True
-            print_file = file.strip_ext() + '.test'
+            print_file = file.strip_ext() + '.out'
             with file.open() as f:
                 # get lines by label
                 labels = f.read().split('\x0c')
@@ -53,7 +53,7 @@ def oe_label_despooler(printer, port):
                     'host': printer,
                     'port': port,
                     }
-            commands.getoutput('cat %(pf) | netcat %(host) %(port)' % cmd)
+            commands.getoutput('cat %(pf)s | netcat %(host)s %(port)s' % cmd)
             file.unlink()
         for file in source_dir.glob('*.raw'):
             found_files = True
@@ -73,7 +73,7 @@ def oe_label_despooler(printer, port):
                     'host': printer,
                     'port': port,
                     }
-            commands.getoutput('cat %(pf) | netcat %(host) %(port)' % cmd)
+            commands.getoutput('cat %(pf)s | netcat %(host)s %(port)s' % cmd)
             file.unlink()
         if not found_files:
             # didn't do anything, take a breather
