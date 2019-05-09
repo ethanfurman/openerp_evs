@@ -79,20 +79,12 @@ def sync(src, dst):
         )
 def c_of_a(path, progress, id, max_copies):
     '''
-    copy, move, and sort source pdfs into fnxfs file structure
+    copy, move, and sort source pdfs into fnxfs file structure according to
+    settings found in product.prodect
     '''
-    # -- Documents/
-    #    |-- ABC/
-    #    |   `-- BLA1000/
-    #    |       `-- BLA1000 3-22178.pdf
-    #    |-- DEF/
-    #    |-- GHIJ/
-    #    |-- KLM/
-    #    |-- NOP/
-    #    |-- QRS/
-    #    |-- TUV/
-    #    `-- WQYZ/
+    #
     # rsync -auv --exclude '.~lock*' root@192.168.2.61:/mnt/virtualxp/JRA_Docs/. /home/JRA_Docs/.
+    #
     file_id = id
     if file_id:
         print('looking in %s for files matching %s' % (path, file_id))
