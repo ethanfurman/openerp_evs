@@ -26,7 +26,7 @@ def oe_label_despooler(src_path, printer, port):
     while Time.now().hour < 20:
         # track work so we can timeout if nothing done
         found_files = False
-        for file in source_dir.glob('*.src'):
+        for file in source_dir.glob('*.txt'):
             print('processing file:', file, border='overline')
             found_files = True
             print_file = file.strip_ext() + '.out'
