@@ -14,11 +14,15 @@ import time
 VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
 
 @Command(
+        src_path=Spec('location of spooled files [if relative, base is virtualenv]', REQUIRED, type=Path),
         printer=Spec('where to send print output', REQUIRED),
         port=Spec('which port to use [default: 9100]', REQUIRED, force_default=9100),
         )
-def oe_label_despooler(printer, port):
-    source_dir = VIRTUAL_ENV / 'var/sample_labels'
+def oe_label_despooler(src_path, printer, port):
+    if src_path[0] == '/':
+        source_dir = src_path
+    else:
+        source_dir = VIRTUAL_ENV / src_path
     while Time.now().hour < 20:
         # track work so we can timeout if nothing done
         found_files = False
