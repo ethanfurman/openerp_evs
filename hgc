@@ -4,12 +4,14 @@ from __future__ import print_function
 
 from getpass import getpass
 from antipathy import Path
-from scription import Command, Execute, Main, OPTION, REQUIRED, user_ids, echo
+from scription import Command, Execute, Main, OPTION, REQUIRED, user_ids, echo, print
+
+import os
 
 search = (
     Path('/usr/lib/pymodules/python2.7'),
     Path('/usr/local/bin'),
-    Path('/opt'),
+    Path(os.environ['VIRTUAL_ENV'])/'openerp',
     )
 
 def workhorse(*path):
@@ -20,8 +22,9 @@ def workhorse(*path):
         path = search
     for p in path:
         for current, dirs, files in p.walk():
-            if '.bak/' in current or current.endswith('.bak'):
-                continue
+            print('looking in', current, verbose=3)
+            if '.bak/' in current or current.endswith(('.hg','.bak')):
+                dirs[:] = []
             if '.hg' in dirs:
                 yield current
 
