@@ -56,7 +56,7 @@ def find_issues(*messages):
     return found_issues
 
 servers = {
-    'fal':  'openerp.sunridgefarms.com',
+    'fal':  '192.168.11.16',
     'whc':  '192.168.2.243',
     }
 
