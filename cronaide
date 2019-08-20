@@ -276,7 +276,8 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     'return code: %s' % result.returncode,
                     'time to run: approximately %s' % seconds2time(elapsed),
                     ]
-            if (check_stdout and 'ERROR' in result.stdout) or result.returncode or (fail_on_stderr and result.stderr):
+            output = result.stdout + result.stderr
+            if (check_stdout and ('ERROR' in output or 'Traceback' in output)) or result.returncode or (fail_on_stderr and result.stderr):
                 failed = True
                 if result.stdout:
                     body.append('stdout\n======\n%s' % result.stdout)
