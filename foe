@@ -17,7 +17,43 @@ def main():
     config = OrmFile('%s/config/fnx.ini' % os.environ['VIRTUAL_ENV'], types={'_path':Path})
 
 @Command()
-def backups():
+def info():
+    "show network and local settings"
+    if config.network.role == 'master':
+        daily_src = config.postgres.daily
+        monthly_src = config.postgres.monthly
+        daily_dst = config.network.daily_backup
+        monthly_dst = config.network.monthly_backup
+        host = config.network.slave
+        echo('\nbackups will be copied from\n  %s\nto\n  %s:%s\n\nand from\n  %s\nto\n  %s:%s' % (
+            daily_src, host, daily_dst,
+            monthly_src, host, monthly_dst,
+            ))
+    elif config.network.role == 'slave':
+        daily_src = config.network.daily_backup
+        monthly_src = config.network.monthly_backup
+        daily_dst = config.postgres.daily
+        monthly_dst = config.postgres.monthly
+        host = config.network.master
+        echo('\nbackups will be copied from\n  %s:%s\nto\n  %s\n\nand from\n  %s:%s\nto\n  %s' % (
+            host, daily_src, daily_dst,
+            host, monthly_src, monthly_dst,
+            ))
+        echo('\nWill keep %d local and %d monthly backups' % (config.postgres.daily_limit, config.postgres.monthly_limit))
+    if config.network.get('fis_data_host') is None:
+        echo('\n\ncanonical fis data host not configured')
+    host = config.network.fis_data_host
+    path = config.network.fis_data_path
+    pre = config.network.fis_data_prefix
+    local_path = config.network.fis_data_local_path
+    echo('\nFIS %r data files will be copied from\n  %s:%s\nto\n  %s' % (pre, host, path, local_path))
+    echo('\nCurrent daily backups:\n  %s' % '\n  '.join(Path(config.postgres.daily).listdir()))
+    echo('\nCurrent monthly backups:\n  %s' % '\n  '.join(Path(config.postgres.monthly).listdir()))
+
+@Command(
+        remove=('remove excess backups', FLAG),
+        )
+def backups(remove):
     """
     copy backup from master to slave
 
@@ -97,7 +133,7 @@ def backups():
         output.extend(['*' * 50, command, '-' * 50, job.stdout, '-' * 50, job.stderr])
     if output:
         output.append('*' * 50)
-    if config.network.role == 'slave':
+    if config.network.role == 'slave' and remove:
         _remove_excess(config.postgres.daily, config.postgres.daily_limit)
         _remove_excess(config.postgres.monthly, config.postgres.monthly_limit)
     if output:
