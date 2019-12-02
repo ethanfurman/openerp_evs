@@ -167,6 +167,9 @@ def fis(complete):
             '{path}/{pre}{f} {path}/{pre}{f}M {path}/{pre}{f}.txt'.format(path=path, pre=pre, f=f)
             for f in config.network.fis_openerp_files.split()
             ]).split()
+        # XXX - dirty hack to get weird file
+        if pre == 'O':
+            files.append('{path}/COPERM'.format(path=path))
     output = []
     try:
         print('calling rsync')
