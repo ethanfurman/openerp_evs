@@ -175,7 +175,7 @@ def fis(complete):
         error('\n-----------------\n'.join([exc.commandline, exc.job.stdout, exc.job.stderr]))
         raise SystemExit(exc.job.returncode)
     output.extend([command, job.stdout, job.stderr])
-    command = 'chown -R openerp: /FIS'
+    command = 'chown -R openerp: %s' % (local_path, )
     print(command, verbose=1)
     job = Execute(command, timeout=60*15)
     output.extend([command, job.stderr, job.stdout])
