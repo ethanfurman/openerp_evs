@@ -2,7 +2,7 @@
 from __future__ import print_function
 from datetime import datetime
 from antipathy import Path
-from scription import Command, Alias, Execute, Run, abort, print, FLAG, MULTI, OPTION
+from scription import *
 import os
 import re
 
@@ -14,10 +14,11 @@ import re
         timestamp=('display timestamp of file', FLAG),
         hidden=('show hidden files/directories', FLAG),
         execute=('run command on each file found (replaceable options: %one %all)', OPTION),
+        abort=Spec('quit if any error', FLAG, None, force_default=True),
         env=('only search in $PATH (implies FILES-ONLY)', FLAG, None),
         )
 @Alias('fs')
-def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, *regex):
+def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, abort, *regex):
     "Searches for directories/files that match REGEX in PATH."
     print('files_only: %r\ndirs_only: %r\ntimestamp: %r\nhidden: %r\npath: %r\nexecute: %r\nenv: %r\nregex: %r'
             % (files_only, dirs_only, timestamp, hidden, path, execute, env, regex),
@@ -78,7 +79,7 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, *re
                                 target = tree/d-base
                                 if execute:
                                     if single:
-                                        command(execute % target)
+                                        command(execute % target, abort)
                                     else:
                                         found_dirs.append(target)
                                 else:
@@ -88,7 +89,7 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, *re
                                         print(target, verbose=0)       # mtime
                 dirs[:] = [d for d in dirs if d not in skip_dirs]
                 if found_dirs:
-                    command(execute % ' '.join(found_dirs))
+                    command(execute % ' '.join(found_dirs), abort)
             if not dirs_only:
                 found_files = []
                 for f in files:
@@ -98,7 +99,7 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, *re
                                 target = tree/f-base
                                 if execute:
                                     if single:
-                                        command(execute % target)
+                                        command(execute % target, abort)
                                     else:
                                         found_files.append(target)
                                 else:
@@ -107,9 +108,9 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, *re
                                     else:
                                         print(target, verbose=0)       # mtime
                 if found_files:
-                    command(execute % ' '.join(found_files))
+                    command(execute % ' '.join(found_files), abort)
 
-def command(command):
+def command(command, abort_on_error):
     print('executing', command, verbose=2)
     history = Execute(command)
     for stream in ('stdout', 'stderr'):
@@ -117,6 +118,9 @@ def command(command):
         if stream:
             print(stream, end='')
     if history.returncode:
-        abort('%r returned code %r' % (command, history.returncode))
+        if abort_on_error:
+            abort('%r returned code %r' % (command, history.returncode))
+        else:
+            error('%r returned code %r' % (command, history.returncode))
 
 Run()
