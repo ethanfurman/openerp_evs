@@ -160,7 +160,7 @@ def self_test():
         heartbeat=('Send notification of successful job run.', FLAG, ),
         passthrough=('Send STDOUT and STDERR streams to cron.', FLAG, ),
         check_stdout=Spec('check for "ERROR" in stdout stream', FLAG, abbrev=None),
-        fail_on_stderr=Spec('report error of any output on stderr stream', FLAG, abbrev=None),
+        fail_on_stderr=Spec('report error if any output on stderr stream', FLAG, abbrev=None),
         lock_action=Spec(
             'do LOCK-ACTION if previous job still running',
             OPTION, abbrev='la', choices=['wait', 'kill'],
@@ -276,7 +276,8 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     'return code: %s' % result.returncode,
                     'time to run: approximately %s' % seconds2time(elapsed),
                     ]
-            if (check_stdout and 'ERROR' in result.stdout) or result.returncode or (fail_on_stderr and result.stderr):
+            output = result.stdout + result.stderr
+            if (check_stdout and ('ERROR' in output or 'Traceback' in output)) or result.returncode or (fail_on_stderr and result.stderr):
                 failed = True
                 if result.stdout:
                     body.append('stdout\n======\n%s' % result.stdout)
@@ -302,7 +303,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                 #    HC   |   yes  | capture
                 #    C    |   yes  | capture
                 #    C    |   no   | none
-                if heartbeat and not (capture and result.stdout):
+                if heartbeat and not (capture and (result.stdout or result.stderr)):
                     print('sending heartbeat')
                     msg = message % (
                         ','.join(email),
@@ -310,9 +311,11 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                         '\n\n'.join(body),
                         )
                     mail(mail_server, 25, msg)
-                if capture and result.stdout:
+                if capture and (result.stdout or result.stderr):
                     if result.stdout:
                         body.append('stdout\n======\n%s' % result.stdout)
+                    if result.stderr:
+                        body.append('stderr\n======\n%s' % result.stderr)
                     print('catch and release')
                     msg = message % (
                         ','.join(email),
