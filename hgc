@@ -11,7 +11,7 @@ import os
 search = (
     Path('/usr/lib/pymodules/python2.7'),
     Path('/usr/local/bin'),
-    Path(os.environ['VIRTUAL_ENV'])/'openerp',
+    Path(os.environ['VIRTUAL_ENV'])/'openerp.hg',
     )
 
 def workhorse(*path):
@@ -23,7 +23,7 @@ def workhorse(*path):
     for p in path:
         for current, dirs, files in p.walk():
             print('looking in', current, verbose=3)
-            if '.bak/' in current or current.endswith(('.hg','.bak')):
+            if '.bak/' in current or current.endswith('.bak'):
                 dirs[:] = []
             if '.hg' in dirs:
                 yield current
@@ -144,7 +144,7 @@ def pull(repo, *path):
             continue
         echo(repo)
         echo('=' * 76)
-        history = Execute(('hg', 'pull'), timeout=30, cwd=repo, password=password, pty=True)
+        history = Execute(('hg', 'pull'), timeout=900, cwd=repo, password=password, pty=True)
         stdout = history.stdout
         stderr = history.stderr
         returncode = history.returncode
