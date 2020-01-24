@@ -462,7 +462,7 @@ def _get_dump_cmds():
     global PGDUMPCMD, PGDUMPALLCMD
     # get server version
     text = _psql("""-c "select current_setting('server_version_num')" --tuples-only""")
-    print('gdc::1', verbose=2)
+    print('gdc::1 -> %r' % (text, ), verbose=2)
     version = 'v' + text.strip()[:-2]
     print('gdc::2', verbose=2)
     PGDUMPCMD %= pg_settings[version]
@@ -713,6 +713,10 @@ def _tgz_files(target_path, id=None):
         raise SystemExit(result.returncode)
     targets = VAR_OPENERP_DIR.glob('fnxfs.*')
     targets.append(VAR_OPENERP_DIR/'fnxfs')
+    if not VAR_OPENERP_DIR.exists('ws'):
+        error('missing link to %s/ws directory' % VIRTUAL_ENV)
+    else:
+        targets.extend((VAR_OPENERP_DIR / 'ws').glob('*'))
     targets.append('/tmp/oe_config.tar.gz')
     conn = get_connection(hostname=OEHOST, database=OEDATA, login=OEUSER, password=OEPSWD)
     location = get_records(conn, 'ir.config_parameter', domain=[('key','=','ir_attachment.location')])
