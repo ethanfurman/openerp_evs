@@ -12,10 +12,11 @@ self = Path(sys.argv[0])
 mode = self.stat().st_mode
 
 @Command(
-        repo=Spec('root directory of repo', type=Path),
+        repo=Spec('root directory of repo', type=Path, force_default=''),
         )
 def set_owner_of(repo):
     "sets the root directory owner as owner of all sub-files/directories"
+    repo = repo or get_current_repo()
     print('setting owner of:', repo)
     stat = repo.stat()
     uid = stat.st_uid
@@ -28,10 +29,10 @@ def set_owner_of(repo):
     echo(job.stdout, end='')
     error(job.stderr, end='')
     print('return code:', job.returncode)
-    raise SystemExit(job.returncode)
+    return job.returncode
 
 @Command(
-        repo=Spec('root directory of repo', type=Path),
+        repo=Spec('root directory of repo', type=Path, force_default=''),
         )
 def add_group_write_to(repo):
     "adds the group write permission bit"
@@ -40,10 +41,10 @@ def add_group_write_to(repo):
     echo(job.stdout, end='')
     error(job.stderr, end='')
     print('return code:', job.returncode)
-    raise SystemExit(job.returncode)
+    return job.returncode
 
 @Command(
-        repo=Spec('root directory of repo', type=Path),
+        repo=Spec('root directory of repo', type=Path, force_default=''),
         )
 def install_to_opt_bin(repo):
     "copies files specified in repo/.hgupdate_install to /opt/bin"
@@ -89,6 +90,21 @@ def install_to_opt_bin(repo):
         else:
             dst.chmod(0o6755)
 
+@Command(
+        )
+def update():
+    repo = get_current_repo()
+    install_to_opt_bin(repo)
+    add_group_write_to(repo)
+    set_owner_of(repo)
+
+def get_current_repo():
+    cwd = Path.getcwd()
+    for p in cwd.ascend():
+        if p.exists('.git'):
+            return p
+    else:
+        raise ValueError('repo not found')
 
 with user_ids(0, 0):
     try:
