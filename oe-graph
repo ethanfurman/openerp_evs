@@ -6,12 +6,15 @@ Produce graphs for various bits of OpenERP
 from __future__ import print_function
 from scription import *
 from antipathy import Path
-from networkx import DiGraph
+from openerplib import get_connection
 import networkx as nx
 import psycopg2
 import os
+import random
 
 VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
+
+# API
 
 @Script()
 def setup():
@@ -27,11 +30,11 @@ def setup():
     )
 def ancestors(modules, output, complete, prog='dot'):
     "show modules that depend on MODULE"
-    G = DiGraph()
+    G = nx.DiGraph()
     for m in modules:
         G.add_node('m')
     get_ancestors(G, complete, *modules)
-    draw_graph(G, output, prog=prog, modules=modules)
+    draw_module_graph(G, output, prog=prog, modules=modules)
 
 
 @Command(
@@ -41,12 +44,12 @@ def ancestors(modules, output, complete, prog='dot'):
     prog=('program to create graph', OPTION),
     )
 def centered_on(modules, output, complete, prog='dot'):
-    G = DiGraph()
+    G = nx.DiGraph()
     for m in modules:
         G.add_node(m)
     get_ancestors(G, complete, *modules)
     get_dependents(G, *modules)
-    draw_graph(G, output, prog=prog, modules=modules)
+    draw_module_graph(G, output, prog=prog, modules=modules)
 
 
 @Command(
@@ -56,11 +59,11 @@ def centered_on(modules, output, complete, prog='dot'):
     )
 def requires(modules, output, prog='dot'):
     "show dependencies for modules"
-    G = DiGraph()
+    G = nx.DiGraph()
     for m in modules:
         G.add_node('m')
     get_dependents(G, *modules)
-    draw_graph(G, output, prog=prog, modules=modules)
+    draw_module_graph(G, output, prog=prog, modules=modules)
 
 
 @Command(
@@ -74,13 +77,234 @@ def installed_modules(output, prog='dot', list=False):
     print('installed modules are: %r' % modules, verbose=not list)
     if list:
         return
-    G = DiGraph()
+    G = nx.DiGraph()
     for m in modules:
         deps = get_info(m)['depends']
         for d in deps:
             G.add_edge(m, d)
-    draw_graph(G, output, prog=prog)
+    draw_module_graph(G, output, prog=prog)
 
+
+@Command(
+    output=('filename to save graph to', ),
+    prog=('program to use to draw graph', ),
+    tables=('tables to graph', ),
+    )
+def table(output, prog='dot', *tables):
+    oe = get_connection(
+            hostname=CONFIG.options.db_host,
+            database=CONFIG.options.db_name,
+            login='admin',
+            password=CONFIG.options.db_password,
+            )
+    G = nx.MultiDiGraph()
+    for table in tables:
+        table = oe.get_model(table)
+        node = build_table_description(table)
+        node
+        G.add_node(table._name)
+        for field, column in table._columns.items():
+            if column.type not in ('one2many', 'many2one', 'many2many') or column.relation not in tables:
+                continue
+            print('adding %s.%s' % (table._name, field))
+            if column.type == 'one2many':
+                text = 'o2m: %s->%s' % (field, column.relation)
+            elif column.type == 'many2one':
+                text = 'm2o: %s->id' % (field, )
+            elif column.type == 'many2many':
+                text = 'm2m: %s->%s' % (field, column.relation)
+            G.add_node(column.relation)
+            G.add_edge(table._name, column.relation, label=text, style='inv')
+    draw_table_graph(G, output, prog)
+
+@Command(
+        table=Spec('main table', ),
+        criteria=Spec('oe search criteria', type=eval),
+        output=Spec('file to save graph into', OPTION),
+        limit=Spec('how many levels to go', OPTION, force_default=0),
+        tables=Spec('other tables to check for linkages', MULTI),
+        omit=Spec('table:fields to omit', MULTI, None),
+        include=Spec('table:fields to include (non-relational)', MULTI, None),
+        )
+def record(table, criteria, output, limit, tables, omit, include):
+    global oe, skip_fields, keep_fields
+    oe = get_connection(
+            hostname=CONFIG.options.db_host,
+            database=CONFIG.options.db_name,
+            login='admin',
+            password=CONFIG.options.db_password,
+            )
+    skip_fields = set()
+    for tf in omit:
+        o_table, o_field = tf.split(':')
+        skip_fields.add((o_table, o_field))
+    keep_fields = {}
+    for tf in include:
+        i_table, i_field = tf.split(':')
+        keep_fields.setdefault(i_table, set()).add(i_field)
+    tables = (table, ) + tables
+    stored = {}
+    G = nx.MultiDiGraph()
+    table = oe.get_model(table)
+    oe_tables[table._name] = table
+    records = table.read(criteria)
+    print('found %s records' % len(records))
+    # print('using %d: %r' % (record.id, record[table._rec_name]))
+    get_links(G, table, records, stored, 0, limit, tables)
+    draw_table_graph(G, output, 'dot')
+
+
+# helpers
+colors = [
+        'aquamarine', 'bisque', 'brown1', 'burlywood1', 'cadetblue1',
+        'chartreuse', 'cornflowerblue', 'darkgoldenrod1', 'darkseagreen', 'hotpink',
+        'lightskyblue', 'orange', 'plum', 'violet', 'yellow',
+        ]
+table_colors = {}
+random.shuffle(colors)
+
+def get_links(G, table, records, stored=None, depth=0, limit=0, tables=()):
+    depth += 1
+    print('=' * 50, verbose=3)
+    print(table._name, [r.id for r in records], tables, verbose=3)
+    # key_fields = []
+    # for parent, key_field in table._inherits:
+    #     print('  ', parent)
+    #     key_fields.append(key_field)
+    if table._name not in table_colors:
+        if colors:
+            table_colors[table._name] = colors.pop()
+        else:
+            table_colors[table._name] = 'white'
+    table_color = table_colors[table._name]
+    for record in records:
+        current_node_id = stored.get((table._name, record.id))
+        # if current_node_id in done:
+        #     return
+        if current_node_id is None:
+            current_node_id = len(G)
+            text = [
+                    'table: %s' % table._name,
+                    'id: %s' % record.id,
+                    'record: %r' % record[table._rec_name],
+                    ]
+            for include_field in sorted(keep_fields.get(table._name, ())):
+                text.append('%s: %r' % (include_field, record[include_field]))
+            text = '\n'.join(text)
+            G.add_node(current_node_id, color=table_color, style='filled', label=text)
+            stored[table._name, record.id] = current_node_id
+        parent_fields = []
+        for parent_table, target_field in table._inherits:
+            if parent_table not in oe_tables:
+                oe_tables[parent_table] = oe.get_model(parent_table)
+            for field, column in oe_tables[parent_table]._columns.items():
+                if column.type in ('many2one', 'one2many', 'many2many'):
+                    parent_fields.append(field)
+        for field, column in table._columns.items():
+            if (
+                    column.type not in ('one2many', 'many2one', 'many2many')
+                    or column.relation not in tables
+                    or field in (
+                        'create_uid', 'write_uid',
+                        # 'alias_user_id',
+                        'message_follower_ids', 'message_follower_user_ids',
+                        )
+                    or field in parent_fields
+                    or (table._name, field) in skip_fields
+                ):
+                continue
+            print('%sFIELD -- %s::%s -> %s [%s]' % (' '*depth*3, table._name, field, column.relation, column.type), verbose=2)
+            sub_table = oe_tables.get(column.relation)
+            if sub_table is None:
+                oe_tables[column.relation] = sub_table = oe.get_model(column.relation)
+            if sub_table._name not in table_colors:
+                if colors:
+                    table_colors[sub_table._name] = colors.pop()
+                else:
+                    table_colors[sub_table._name] = 'white'
+            sub_table_color = table_colors[sub_table._name]
+            if column.type == 'many2one':
+                if not record[field]:
+                    continue
+                sub_record = sub_table.read(record[field])
+                print('sub-record', sub_record.id, verbose=3)
+                print(stored, verbose=3)
+                sub_node_id = stored.get((sub_table._name, sub_record.id))
+                print('sub_node_id: ', sub_node_id, verbose=3)
+                if sub_node_id is None:
+                    sub_node_id = len(G)
+                    text = [
+                            'table: %s' % sub_table._name,
+                            'id: %s' % sub_record.id,
+                            'record: %r' % sub_record[sub_table._rec_name],
+                            ]
+                    for include_field in sorted(keep_fields.get(sub_table._name, ())):
+                        text.append('%s: %r' % (include_field, sub_record[include_field]))
+                    text = '\n'.join(text)
+                    G.add_node(sub_node_id, color=sub_table_color, style='filled', label=text)
+                    stored[sub_table._name, sub_record.id] = sub_node_id
+                    if not limit or limit and depth < limit:
+                        get_links(G, sub_table, [sub_record], stored, depth, limit, tables)
+                if not stored.get((current_node_id, sub_node_id, field)):
+                    print('%sEDGE -- %s::%s --> %s' % (' '*depth*3, table._name, field, sub_table._name), verbose=2)
+                    G.add_edge(current_node_id, sub_node_id, color='blue', label=field)
+                    stored[current_node_id, sub_node_id, field] = True
+            elif column.type == 'one2many':
+                for sub_record in sub_table.read(record[field]):
+                    sub_node_id = stored.get((sub_table._name, sub_record.id))
+                    if sub_node_id is None:
+                        sub_node_id = len(G)
+                        text = [
+                                'table: %s' % sub_table._name,
+                                'id: %s' % sub_record.id,
+                                'record: %r' % sub_record[sub_table._rec_name],
+                                ]
+                        for include_field in sorted(keep_fields.get(sub_table._name, ())):
+                            text.append('%s: %r' % (include_field, sub_record[include_field]))
+                        text = '\n'.join(text)
+                        G.add_node(sub_node_id, color=sub_table_color, style='filled', label=text)
+                        stored[sub_table._name, sub_record.id] = sub_node_id
+                        # G.add_edge(sub_node_id, current_node_id, color='blue', label=sub_record.fields_id)
+                        if not limit or limit and depth < limit:
+                            get_links(G, sub_table, [sub_record], stored, depth, limit, tables)
+                    if not stored.get((current_node_id, sub_node_id, field)):
+                        print('%sEDGE -- %s::%s --> %s::%s' % (' '*depth*3, table._name, field, sub_table._name, column.relation_field), verbose=2)
+                        G.add_edge(current_node_id, sub_node_id, color='green', label=field)
+                        stored[current_node_id, sub_node_id, field] = True
+            elif column.type == 'many2many':
+                for sub_record in sub_table.read(record[field]):
+                    sub_node_id = stored.get((sub_table._name, sub_record.id))
+                    if sub_node_id is None:
+                        sub_node_id = len(G)
+                        text = [
+                                'table: %s' % sub_table._name,
+                                'id: %s' % sub_record.id,
+                                'record: %r' % sub_record[sub_table._rec_name],
+                                ]
+                        for include_field in sorted(keep_fields.get(sub_table._name, ())):
+                            text.append('%s: %r' % (include_field, sub_record[include_field]))
+                        text = '\n'.join(text)
+                        G.add_node(sub_node_id, color=sub_table_color, style='filled', label=text)
+                        stored[sub_table._name, sub_record.id] = sub_node_id
+                        # is there a field back?
+                        # G.add_edge(sub_node_id, current_node_id, color='pink', label=sub_record.fields_id)
+                        # done.add(current_node_id)
+                        if not limit or limit and depth < limit:
+                            get_links(G, sub_table, [sub_record], stored, depth, limit, tables)
+                    if not stored.get((current_node_id, sub_node_id, field)):
+                        print('%sEDGE -- %s::%s --> %s' % (' '*depth*3, table._name, field, sub_table._name), verbose=2)
+                        G.add_edge(current_node_id, sub_node_id, color='pink', label=field)
+                        stored[current_node_id, sub_node_id, field] = True
+
+
+oe_tables = {}
+
+def build_table_description(table):
+    oe_tables[table._name] = table
+    lines = [table._name, '====================']
+    lines
+    if table._inherits:
+        pass
 
 def get_ancestors(G, complete, *modules):
     modules_to_check = set(modules)
@@ -140,7 +364,7 @@ def get_dependents(G, *modules):
                     kwds['color'] = 'orange'
                 G.add_edge(m, d, **kwds)
 
-def draw_graph(G, filename, prog, modules=()):
+def draw_module_graph(G, filename, prog, modules=()):
     # pos = nx.drawing.nx_agraph.pygraphviz_layout(G)
     # G.layout(prog='neato')
     # G.draw(filename)
@@ -166,14 +390,34 @@ def draw_graph(G, filename, prog, modules=()):
     if prog == 'dot':
         # dot only
         # A.graph_attr['ordering'] = 'out'
-        A.graph_attr['newrank'] = True
+        A.graph_attr['newrank'] = False
     # any
-    A.graph_attr['concentrate'] = True
+    A.graph_attr['concentrate'] = False
     A.graph_attr['pad'] = 0.25
     A.graph_attr['fontsize'] = 10
     graph = A.draw(prog=prog, format='png')
     if filename is not None:
         echo('opening %r' % filename)
+        with open(filename, 'wb') as graph_file:
+            graph_file.write(graph)
+    else:
+        echo(graph, end='')
+
+def draw_table_graph(G, filename, prog):
+    # pos = nx.drawing.nx_agraph.pygraphviz_layout(G)
+    # G.layout(prog='neato')
+    # G.draw(filename)
+    A = nx.drawing.nx_agraph.to_agraph(G, )
+    if prog == 'dot':
+        # dot only
+        # A.graph_attr['ordering'] = 'out'
+        A.graph_attr['newrank'] = False
+    # any
+    A.graph_attr['concentrate'] = False
+    A.graph_attr['pad'] = 1
+    A.graph_attr['fontsize'] = 12
+    graph = A.draw(prog=prog, format='png')
+    if filename is not None:
         with open(filename, 'wb') as graph_file:
             graph_file.write(graph)
     else:
