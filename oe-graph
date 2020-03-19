@@ -149,28 +149,24 @@ def record(table, criteria, output, limit, tables, omit, include):
     oe_tables[table._name] = table
     records = table.read(criteria)
     print('found %s records' % len(records))
-    # print('using %d: %r' % (record.id, record[table._rec_name]))
     get_links(G, table, records, stored, 0, limit, tables)
     draw_table_graph(G, output, 'dot')
 
 
 # helpers
+
+oe_tables = {}
+table_colors = {}
 colors = [
         'aquamarine', 'bisque', 'brown1', 'burlywood1', 'cadetblue1',
         'chartreuse', 'cornflowerblue', 'darkgoldenrod1', 'darkseagreen', 'hotpink',
         'lightskyblue', 'orange', 'plum', 'violet', 'yellow',
         ]
-table_colors = {}
 random.shuffle(colors)
 
 def get_links(G, table, records, stored=None, depth=0, limit=None, tables=()):
-    depth += 1
     print('=' * 50, verbose=3)
     print(table._name, [r.id for r in records], tables, verbose=3)
-    # key_fields = []
-    # for parent, key_field in table._inherits:
-    #     print('  ', parent)
-    #     key_fields.append(key_field)
     if table._name not in table_colors:
         if colors:
             table_colors[table._name] = colors.pop()
@@ -179,8 +175,6 @@ def get_links(G, table, records, stored=None, depth=0, limit=None, tables=()):
     table_color = table_colors[table._name]
     for record in records:
         current_node_id = stored.get((table._name, record.id))
-        # if current_node_id in done:
-        #     return
         if current_node_id is None:
             current_node_id = len(G)
             text = [
@@ -194,28 +188,10 @@ def get_links(G, table, records, stored=None, depth=0, limit=None, tables=()):
             G.add_node(current_node_id, color=table_color, style='filled', label=text)
             stored[table._name, record.id] = current_node_id
         parent_fields = []
-        # for parent_table, target_field in table._inherits:
-        #     if parent_table not in oe_tables:
-        #         oe_tables[parent_table] = oe.get_model(parent_table)
-        #     for field, column in oe_tables[parent_table]._all_columns.items():
-        #         if column.type in ('many2one', 'one2many', 'many2many'):
-        #             parent_fields.append(field)
         for field, column in table._all_columns.items():
             if field not in table._columns and column.type in ('many2one', 'one2many', 'many2many'):
                 parent_fields.append(field)
         for field, column in table._columns.items():
-            # if field in ('user_ids', 'fis_transmitter_id'):
-            #     echo(table._name, field, column.type, column.relation)
-            #     echo('not om2om:', column.type not in ('one2many', 'many2one', 'many2many'))
-            #     echo('not tables:', column.relation not in tables)
-            #     echo('icky field:', field in (
-            #             'create_uid', 'write_uid',
-            #             # 'alias_user_id',
-            #             'message_follower_ids', 'message_follower_user_ids',
-            #             ))
-            #     echo('parent:', field in parent_fields)
-            #     echo('self:', field in table._columns)
-            #     echo('skip:', (table._name, field) in skip_fields)
             if (
                     column.type not in ('one2many', 'many2one', 'many2many')
                     or column.relation not in tables
@@ -246,33 +222,10 @@ def get_links(G, table, records, stored=None, depth=0, limit=None, tables=()):
                 print(stored, verbose=3)
                 sub_node_id = stored.get((sub_table._name, sub_record.id))
                 print('sub_node_id: ', sub_node_id, verbose=3)
-                if sub_node_id is None:
-                    sub_node_id = len(G)
-                    text = [
-                            'table: %s' % sub_table._name,
-                            'id: %s' % sub_record.id,
-                            'record: %r' % sub_record[sub_table._rec_name],
-                            ]
-                    for include_field in sorted(keep_fields.get(sub_table._name, ())):
-                        text.append('%s: %r' % (include_field, sub_record[include_field]))
-                    text = '\n'.join(text)
-                    G.add_node(sub_node_id, color=sub_table_color, style='filled', label=text)
-                    stored[sub_table._name, sub_record.id] = sub_node_id
-                    descent = depth
-                    echo(table._name, sub_table._name, field, table._inherits)
-                    echo('descent', descent)
-                    if [sub_table._name, field] in table._inherits:
-                        descent -= 1
-                    echo('descent', descent)
-                    if limit is None or descent <= limit:
-                        get_links(G, sub_table, [sub_record], stored, descent, limit, tables)
-                if not stored.get((current_node_id, sub_node_id, field)):
-                    print('%sEDGE -- %s::%s --> %s' % (' '*depth*3, table._name, field, sub_table._name), verbose=2)
-                    G.add_edge(current_node_id, sub_node_id, color='blue', label=field)
-                    stored[current_node_id, sub_node_id, field] = True
-            elif column.type == 'one2many':
-                for sub_record in sub_table.read(record[field]):
-                    sub_node_id = stored.get((sub_table._name, sub_record.id))
+                descent = depth
+                if [sub_table._name, field] in table._inherits:
+                    descent -= 1
+                if limit is None or descent < limit:
                     if sub_node_id is None:
                         sub_node_id = len(G)
                         text = [
@@ -285,10 +238,29 @@ def get_links(G, table, records, stored=None, depth=0, limit=None, tables=()):
                         text = '\n'.join(text)
                         G.add_node(sub_node_id, color=sub_table_color, style='filled', label=text)
                         stored[sub_table._name, sub_record.id] = sub_node_id
-                        # G.add_edge(sub_node_id, current_node_id, color='blue', label=sub_record.fields_id)
-                        if limit is None or depth < limit:
-                            get_links(G, sub_table, [sub_record], stored, depth, limit, tables)
-                    if not stored.get((current_node_id, sub_node_id, field)):
+                        get_links(G, sub_table, [sub_record], stored, descent+1, limit, tables)
+                if sub_node_id and not stored.get((current_node_id, sub_node_id, field)):
+                    print('%sEDGE -- %s::%s --> %s' % (' '*depth*3, table._name, field, sub_table._name), verbose=2)
+                    G.add_edge(current_node_id, sub_node_id, color='blue', label=field)
+                    stored[current_node_id, sub_node_id, field] = True
+            elif column.type == 'one2many':
+                for sub_record in sub_table.read(record[field]):
+                    sub_node_id = stored.get((sub_table._name, sub_record.id))
+                    if limit is None or depth < limit:
+                        if sub_node_id is None:
+                            sub_node_id = len(G)
+                            text = [
+                                    'table: %s' % sub_table._name,
+                                    'id: %s' % sub_record.id,
+                                    'record: %r' % sub_record[sub_table._rec_name],
+                                    ]
+                            for include_field in sorted(keep_fields.get(sub_table._name, ())):
+                                text.append('%s: %r' % (include_field, sub_record[include_field]))
+                            text = '\n'.join(text)
+                            G.add_node(sub_node_id, color=sub_table_color, style='filled', label=text)
+                            stored[sub_table._name, sub_record.id] = sub_node_id
+                        get_links(G, sub_table, [sub_record], stored, depth+1, limit, tables)
+                    if sub_node_id and not stored.get((current_node_id, sub_node_id, field)):
                         print('%sEDGE -- %s::%s --> %s::%s' % (' '*depth*3, table._name, field, sub_table._name, column.relation_field), verbose=2)
                         G.add_edge(current_node_id, sub_node_id, color='green', label=field)
                         stored[current_node_id, sub_node_id, field] = True
@@ -307,18 +279,14 @@ def get_links(G, table, records, stored=None, depth=0, limit=None, tables=()):
                         text = '\n'.join(text)
                         G.add_node(sub_node_id, color=sub_table_color, style='filled', label=text)
                         stored[sub_table._name, sub_record.id] = sub_node_id
-                        # is there a field back?
-                        # G.add_edge(sub_node_id, current_node_id, color='pink', label=sub_record.fields_id)
-                        # done.add(current_node_id)
                         if limit is None or depth < limit:
-                            get_links(G, sub_table, [sub_record], stored, depth, limit, tables)
+                            get_links(G, sub_table, [sub_record], stored, depth+1, limit, tables)
                     if not stored.get((current_node_id, sub_node_id, field)):
                         print('%sEDGE -- %s::%s --> %s' % (' '*depth*3, table._name, field, sub_table._name), verbose=2)
                         G.add_edge(current_node_id, sub_node_id, color='pink', label=field)
                         stored[current_node_id, sub_node_id, field] = True
 
 
-oe_tables = {}
 
 def build_table_description(table):
     oe_tables[table._name] = table
