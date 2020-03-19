@@ -18,8 +18,9 @@ VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
 
 @Script()
 def setup():
-    global CONFIG
-    CONFIG = OrmFile(VIRTUAL_ENV/'config/server.conf', plain=True)
+    global CONFIG, SERVER_CONFIG
+    SERVER_CONFIG = OrmFile(VIRTUAL_ENV/'config/server.conf', plain=True)
+    CONFIG = OrmFile(VIRTUAL_ENV/'config/fnx.ini')
 
 
 @Command(
@@ -92,10 +93,10 @@ def installed_modules(output, prog='dot', list=False):
     )
 def table(output, prog='dot', *tables):
     oe = get_connection(
-            hostname=CONFIG.options.db_host,
-            database=CONFIG.options.db_name,
-            login='admin',
-            password=CONFIG.options.db_password,
+            hostname=CONFIG.openerp.host,
+            database=CONFIG.openerp.db,
+            login=CONFIG.openerp.user,
+            password=CONFIG.openerp.pw,
             )
     G = nx.MultiDiGraph()
     for table in tables:
@@ -129,10 +130,10 @@ def table(output, prog='dot', *tables):
 def record(table, criteria, output, limit, tables, omit, include):
     global oe, skip_fields, keep_fields
     oe = get_connection(
-            hostname=CONFIG.options.db_host,
-            database=CONFIG.options.db_name,
-            login='admin',
-            password=CONFIG.options.db_password,
+            hostname=CONFIG.openerp.host,
+            database=CONFIG.openerp.db,
+            login=CONFIG.openerp.user,
+            password=CONFIG.openerp.pw,
             )
     skip_fields = set()
     for tf in omit:
@@ -415,11 +416,11 @@ def draw_table_graph(G, filename, prog):
 def get_installed_modules():
     "returns names of all installed modules"
     conn = psycopg2.connect(
-            dbname=CONFIG.options.db_name,
-            user=CONFIG.options.db_user,
-            password=CONFIG.options.db_password,
-            host=CONFIG.options.db_host,
-            port=CONFIG.options.db_port,
+            dbname=SERVER_CONFIG.options.db_name,
+            user=SERVER_CONFIG.options.db_user,
+            password=SERVER_CONFIG.options.db_password,
+            host=SERVER_CONFIG.options.db_host,
+            port=SERVER_CONFIG.options.db_port,
             )
     try:
         cur = conn.cursor()
@@ -476,5 +477,6 @@ def get_info(module):
 
 
 CONFIG = None
+SERVER_CONFIG = None
 
 Run()
