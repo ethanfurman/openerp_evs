@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 from antipathy import Path
+from xaml import Xaml
 from scription import *
 
 import grp
@@ -97,6 +98,35 @@ def update():
     install_to_opt_bin(repo)
     add_group_write_to(repo)
     set_owner_of(repo)
+    xamlize(repo)
+
+@Command(
+        root=Spec('directory tree to check for xaml files', REQUIRED, default='.'),
+        )
+def xamlize(root):
+    for dirpath, dirnames, filenames in Path(root).walk():
+        if dirpath == 'report':
+            for report_name in filenames:
+                if file.ext != '.xaml':
+                    continue
+                echo(dirpath/report_name)
+                with open(dirpath/report_name) as src:
+                    xaml_doc = Xaml(src.read()).document
+                    if len(xaml_doc.pages) != 2:
+                        raise ValueError('%s should have an xml and an xsl component' % report_name)
+                    for page in xaml_doc.pages:
+                        with open(report_name.strip_ext() + '.' + page.ml.type, 'wb') as dst:
+                            dst.write(page.bytes())
+        else:
+            for file in filenames:
+                if file.ext != '.xaml':
+                    continue
+                echo(dirpath/file)
+                with open(dirpath/file) as src:
+                    xaml_doc = Xaml(src.read()).document
+                    for page in xaml_doc.pages:
+                        with open(dirpath/(file.strip_ext() + '.' + page.ml.type), 'wb') as dst:
+                            dst.write(page.bytes())
 
 def get_current_repo():
     cwd = Path.getcwd()
