@@ -50,10 +50,13 @@ def add_group_write_to(repo):
 def install_to_opt_bin(repo):
     "copies files specified in repo/.hgupdate_install to /opt/bin"
     print('getting install file from', repo)
-    if not repo.exists('.hgupdate_install'):
-        print('no such file')
-        return
-    lines = [l.strip() for l in open(repo/'.hgupdate_install').readlines() if l.strip()]
+    for install in ('.hgupdate_install', '.install_scripts'):
+        if repo.exists(install):
+            break
+        else:
+            print('no such file')
+            return
+    lines = [l.strip() for l in open(repo/install).readlines() if l.strip()]
     opt_bin = Path('/opt/bin')
     # pre-screen
     error_lines = []
