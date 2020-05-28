@@ -25,6 +25,7 @@ def configure(module, path, force):
     configure data export options
     - create .migrate directory   [default location: module base directory]
     - create migrate.ini file in .migrate directory with table and field information
+    - check for missing relations
     """
     connect_oe()
     module_tables = get_imd_data(module)
@@ -56,9 +57,12 @@ def configure(module, path, force):
     config.new_model_name = ""
     config[module] = OrmSection()
     print('processing %d tables in %s' % (len(module_tables), module))
+    target_tables = set()
+    configured_models = set()
     for model, d in sorted(module_tables.items()):
         print('  -', model)
         oe_model = oe.get_model(model)
+        configured_models.add(oe_model)
         section_name = model.replace('.','_')
         section = config[module][section_name] = OrmSection(
                 comment='%s\n%s' % (d['string'], d['imd_name'])
@@ -77,6 +81,7 @@ def configure(module, path, force):
                 # these fields are automatically populated by openerp/odoo
                 continue
             elif field.type in ('many2many', 'many2one'):
+                target_tables.add(field.relation)
                 relations.append(field_name)
             elif field.type == 'binary':
                 binaries.append(field_name)
@@ -88,6 +93,9 @@ def configure(module, path, force):
             section.functions = functions
         if relations:
             section.relations = relations
+    missing_relations = target_tables - configured_models
+    if missing_relations:
+        echo('tables in m2x relations not configured:\n- %s' % '\n- '.join(sorted(missing_relations)))
     OrmFile.save(config)
 
 
@@ -123,10 +131,23 @@ def export(module, path, clean, field_type, name):
     if not (path.exists() and config_file.exists()):
         abort('path or config file do not exist; run `%s configure`' % (script_name, ))
     config = OrmFile(config_file, section=module)
-    print('processing section:')
     create_names = name
+    #
     if clean:
-        # delete all ir.model.data entries for this module
+        # remove data files, leave ir.model.data entries alone
+        for current, dirs, files in path.walk(topdown=False):
+            for d in dirs:
+                print('removing', current/d)
+                current.rmdir(d)
+            if current == path:
+                files = [f for f in files if f != 'migrate.ini']
+            for f in files:
+                print('unlinking', current/f)
+                current.unlink(f)
+    #
+    print('processing section:')
+    if not field_type or main:
+        return
     for name, section in config:
         # make sure it's a section
         if not isinstance(section, OrmSection):
@@ -184,20 +205,32 @@ def connect_oe():
             )
 
 def assign_export_names(section, records):
-    echo(section)
+    """
+    OpenERP/Odoo requires ir.model.data names to be globally unique, but
+    allows multiple names per record; we need to have only one name per
+    record (at least in the `oev7` namespace).
+    """
     imd = oe.get_model('ir.model.data')
     model = section.model_name
     base = (section.new_model_name or model).replace('.','_')
     if not base:
         abort('non-empty base required')
-    preexisting = dict(
-            (rec.name, rec)
-            for rec in imd.read(
-                    [('name','=like','%s_%%' % base)],
-                    fields=['id','module','model','name','res_id'],
-                    ))
+    preexisting_names = {}
+    preexisting_ids = {}
+    for rec in imd.read(
+            [('module','=like','oev7%')],
+            fields=['id','module','model','name','res_id'],
+        ):
+        preexisting_names[rec.name] = rec
+        preexisting_ids[rec.model, rec.res_id] = rec
     for rec in records:
         name = '%s_%06d' % (base, rec.id)
+        if preexisting_ids.get((model, rec.id)):
+            continue
+        elif preexisting_names.get(name):
+            pre = preexisting_names[name]
+            abort('%s is already being used by %s->%s.%d' % (name, pre.module, pre.model, pre.res_id))
+
         pre = preexisting.get(name)
         if pre and (pre.res_id != rec.id or pre.model != model):
             echo(pre)
