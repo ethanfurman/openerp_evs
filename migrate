@@ -1,0 +1,241 @@
+#!/usr/local/sbin/suid-python --virtualenv
+"""\
+aid for transferring data from OpenERP v7.0 to Odoo v13.
+"""
+
+from __future__ import print_function
+
+import os
+from antipathy import Path
+from openerplib import get_connection, AttrDict
+from scription import *
+
+virtual_env = Path(os.environ['VIRTUAL_ENV'])
+config = virtual_env / 'config/fnx.ini'
+
+# API
+
+@Command(
+        module=Spec('module to process', ),
+        path=Spec('where to create .migrate directory', OPTION, type=Path),
+        force=Spec('overwrite existing migrate.ini configuration file', FLAG),
+        )
+def configure(module, path, force):
+    """
+    configure data export options
+    - create .migrate directory   [default location: module base directory]
+    - create migrate.ini file in .migrate directory with table and field information
+    """
+    connect_oe()
+    module_tables = get_imd_data(module)
+    print('calculating path')
+    if not path:
+        print("  from %s module's location" % module)
+        path = virtual_env / 'openerp/addons' / module
+    path /= '.migrate'
+    print('  ==>', path)
+    if not path.exists():
+        print('creating path')
+        path.mkdir()
+    config_file = path / 'migrate.ini'
+    if force and config_file.exists():
+        print('removing', config_file)
+        config_file.unlink()
+    elif config_file.exists():
+        abort('config file %s exists; use --force to overwrite' % config_file)
+    print('creating', config_file)
+    config = OrmFile(config_file)
+    print('adding default domain and context')
+    config.domain = [(1,'=',1)]
+    config.context = {'active_test': False}
+    config.fields = []
+    config.binaries = []
+    config.functions = []
+    config.relations = []
+    config.exclude = []
+    config.new_model_name = ""
+    config[module] = OrmSection()
+    print('processing %d tables in %s' % (len(module_tables), module))
+    for model, d in sorted(module_tables.items()):
+        print('  -', model)
+        oe_model = oe.get_model(model)
+        section_name = model.replace('.','_')
+        section = config[module][section_name] = OrmSection(
+                comment='%s\n%s' % (d['string'], d['imd_name'])
+                )
+        section.model_name = model
+        fields = section.fields = []
+        binaries = []
+        functions = []
+        relations = []
+        for field_name, field in sorted(oe_model._columns.items()):
+            if field_name == 'id':
+                continue
+            elif 'function' in field:
+                functions.append(field_name)
+            elif field.type in ('one2many', 'related'):
+                # these fields are automatically populated by openerp/odoo
+                continue
+            elif field.type in ('many2many', 'many2one'):
+                relations.append(field_name)
+            elif field.type == 'binary':
+                binaries.append(field_name)
+            else:
+                fields.append(field_name)
+        if binaries:
+            section.binaries = binaries
+        if functions:
+            section.functions = functions
+        if relations:
+            section.relations = relations
+    OrmFile.save(config)
+
+
+
+@Command(
+        module=Spec('module to process', ),
+        path=Spec('location of .migrate directory', OPTION, None, type=Path),
+        clean=Spec('remove existing data files (not migrate.ini)', FLAG, None),
+        field_type=Spec('field types to export', MULTI, choices='standard binary relation'),
+        name=Spec('add ir.model.names for each record', FLAG),
+        )
+def export(module, path, clean, field_type, name):
+    """
+    export data from current virtualenv's OpenERP/Odoo installation
+    - works on one specified module at a time
+    - creates globally unique ir.model.data names for each record
+      in each table
+    - saves non-binary/non-x2x data into a csv file with matching
+      module.model name
+    - saves binary date to separate, individual files with imd name
+    - saves x2x fields into separate file (one per table) with relational
+      links using ir.model.data names
+    - 0th row of csv is exported field names
+    """
+    connect_oe()
+    print('calculating path')
+    if not path:
+        print("  from %s module's location" % module)
+        path = virtual_env / 'openerp/addons' / module
+    path /= '.migrate'
+    print('  ==>', path)
+    config_file = path / 'migrate.ini'
+    if not (path.exists() and config_file.exists()):
+        abort('path or config file do not exist; run `%s configure`' % (script_name, ))
+    config = OrmFile(config_file, section=module)
+    print('processing section:')
+    create_names = name
+    if clean:
+        # delete all ir.model.data entries for this module
+    for name, section in config:
+        # make sure it's a section
+        if not isinstance(section, OrmSection):
+            continue
+        print('-', name)
+        oe_model = oe.get_model(section.model_name)
+        standard_fields = get_section_standard_fields(section)
+        binary_fields = get_section_binary_fields(section)
+        relation_fields = get_section_relation_fields(section)
+        fields_needed = ['id']
+        fields_needed.extend(standard_fields)
+        fields_needed.extend(binary_fields)
+        fields_needed.extend(relation_fields)
+        data = oe_model.read(
+                section.domain,
+                fields=fields_needed,
+                context=section.context,
+                )
+        if create_names:
+            print('  - assigning names in ir.model.data')
+            assign_export_names(section, data)
+        if 'standard' in field_type:
+            print('  - exporting standard fields')
+        if 'binary' in field_type:
+            print('  - exporting binary fields')
+        if 'relation' in field_type:
+            print('  - exporting relation fields')
+
+
+        # csv_header = get_section_export_header(section)
+
+
+
+
+
+
+@Command()
+@Alias('import')
+def _import():
+    """
+    import data from .migrate bundle into current virtualenv's Odoo installation
+    - works on one specified module at a time
+    - can specify a configuration file for table/field name changes
+    """
+
+# helpers
+def connect_oe():
+    global oe
+    cfg = OrmFile(config, types={'_path':Path})
+    oe = get_connection(
+            hostname=cfg.openerp.host,
+            database=cfg.openerp.db,
+            login=cfg.openerp.user,
+            password=cfg.openerp.pw,
+            )
+
+def assign_export_names(section, records):
+    echo(section)
+    imd = oe.get_model('ir.model.data')
+    model = section.model_name
+    base = (section.new_model_name or model).replace('.','_')
+    if not base:
+        abort('non-empty base required')
+    preexisting = dict(
+            (rec.name, rec)
+            for rec in imd.read(
+                    [('name','=like','%s_%%' % base)],
+                    fields=['id','module','model','name','res_id'],
+                    ))
+    for rec in records:
+        name = '%s_%06d' % (base, rec.id)
+        pre = preexisting.get(name)
+        if pre and (pre.res_id != rec.id or pre.model != model):
+            echo(pre)
+            abort('%s is already being used by %s->%s.%d' % (name, pre.module, pre.model, pre.res_id))
+        new_rec = AttrDict(module='oev7', model=model, name=name, res_id=rec.id)
+        new_id = imd.create(new_rec)
+        preexisting[name] = new_rec
+
+def get_section_standard_fields(section):
+    return []
+
+def get_section_binary_fields(section):
+    return []
+
+def get_section_relation_fields(section):
+    return []
+
+
+def get_imd_data(module):
+    """
+    return dict of dot-model name to name
+
+    """
+    ir_model = oe.get_model('ir.model')
+    ir_model_data = oe.get_model('ir.model.data')
+    module_table_model= dict(
+            (r.res_id, r.name)
+            for r in ir_model_data.read(
+                    [('module','=',module),('model','=','ir.model')],
+                    fields=['id','res_id','name'],
+                    ))
+    module_tables = dict(
+            (r.model, dict(string=r.name, imd_name=module_table_model[r.id]))
+            for r in ir_model.read(
+                    [('id','in',module_table_model.keys())],
+                    fields=['name','model'],
+                    ))
+    return module_tables
+
+Run()
+
