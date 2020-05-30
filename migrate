@@ -5,9 +5,11 @@ aid for transferring data from OpenERP v7.0 to Odoo v13.
 
 from __future__ import print_function
 
+import codecs
 import os
 from antipathy import Path
 from openerplib import get_connection, AttrDict
+from openerplib import dates
 from scription import *
 
 virtual_env = Path(os.environ['VIRTUAL_ENV'])
@@ -145,22 +147,27 @@ def export(module, path, clean, field_type, name):
                 print('unlinking', current/f)
                 current.unlink(f)
     #
-    print('processing section:')
-    if not field_type or main:
+    if not (name or field_type):
         return
+    print('getting ir.model.data links')
+    Link.prime()
+    print('processing section:')
     for name, section in config:
         # make sure it's a section
         if not isinstance(section, OrmSection):
             continue
         print('-', name)
         oe_model = oe.get_model(section.model_name)
-        standard_fields = get_section_standard_fields(section)
-        binary_fields = get_section_binary_fields(section)
-        relation_fields = get_section_relation_fields(section)
+        standard_fields = section.fields
+        binary_fields = section.binaries
+        relation_fields = section.relations
         fields_needed = ['id']
-        fields_needed.extend(standard_fields)
-        fields_needed.extend(binary_fields)
-        fields_needed.extend(relation_fields)
+        if 'standard' in field_type:
+            fields_needed.extend(standard_fields)
+        if 'binary' in field_type:
+            fields_needed.extend(binary_fields)
+        if 'relation' in field_type:
+            fields_needed.extend(relation_fields)
         data = oe_model.read(
                 section.domain,
                 fields=fields_needed,
@@ -194,8 +201,14 @@ def _import():
     """
 
 # helpers
+class CSVError(ValueError):
+    "error processing csv data"
+
+class DuplicateError(ValueError):
+    "model:id already assigned a name in ir.model.data"
+
 def connect_oe():
-    global oe
+    global oe, ir_model_data
     cfg = OrmFile(config, types={'_path':Path})
     oe = get_connection(
             hostname=cfg.openerp.host,
@@ -203,6 +216,7 @@ def connect_oe():
             login=cfg.openerp.user,
             password=cfg.openerp.pw,
             )
+    ir_model_data = oe.get_model('ir.model.data')
 
 def assign_export_names(section, records):
     """
@@ -210,14 +224,13 @@ def assign_export_names(section, records):
     allows multiple names per record; we need to have only one name per
     record (at least in the `oev7` namespace).
     """
-    imd = oe.get_model('ir.model.data')
     model = section.model_name
     base = (section.new_model_name or model).replace('.','_')
     if not base:
         abort('non-empty base required')
     preexisting_names = {}
     preexisting_ids = {}
-    for rec in imd.read(
+    for rec in ir_model_data.read(
             [('module','=like','oev7%')],
             fields=['id','module','model','name','res_id'],
         ):
@@ -230,24 +243,308 @@ def assign_export_names(section, records):
         elif preexisting_names.get(name):
             pre = preexisting_names[name]
             abort('%s is already being used by %s->%s.%d' % (name, pre.module, pre.model, pre.res_id))
-
-        pre = preexisting.get(name)
-        if pre and (pre.res_id != rec.id or pre.model != model):
-            echo(pre)
-            abort('%s is already being used by %s->%s.%d' % (name, pre.module, pre.model, pre.res_id))
         new_rec = AttrDict(module='oev7', model=model, name=name, res_id=rec.id)
-        new_id = imd.create(new_rec)
-        preexisting[name] = new_rec
+        new_id = ir_model_data.create(new_rec)
+        preexisting_names[name] = new_rec
+        preexisting_ids[model, new_id] = new_rec
 
-def get_section_standard_fields(section):
-    return []
+def export_standard_fields(module, path, section, data):
+    """
+    create module_new_model.csv file
+    id field is replaced with ir.model.data name
+    """
+    standard_file = path / '%s_%s.csv' % (module, (section.new_model_name or section.model_name).replace('.','_'))
+    fields = ['id'] + sorted(section.fields)
+    with csv(standard_file, 'w', header=fields) as writer:
+        for rec in data:
+            row = [Link(section.model_name, rec.id)]
+            for f in fields[1:]:
+                row.append(rec[f])
+            writer.write_row(row)
+    
 
-def get_section_binary_fields(section):
-    return []
+def export_binary_fields(module, path, section, data):
+    """
+    export binary values, one per file, as ir.model.data name and field name
+    """
 
-def get_section_relation_fields(section):
-    return []
+def export_relation_fields(module, path, section, data):
+    """
+    create module_model_relations.csv file
+    values are space-separated ir.model.data names
+    """
 
+class dualmethod(object):
+    "passes both class and self to function"
+
+    def __init__(descriptor, func, doc=None):
+        descriptor.func = func
+        descriptor.__doc__ = doc or func.__doc__
+
+    def __get__(descriptor, cls, instance):
+        return lambda *args, **kwds: descriptor.func(cls, instance, *args, **kwds)
+
+
+class Link(object):
+    "represents a link to a model:record"
+
+    links_by_name = {}
+    links_by_model_id = {}
+
+    __slots__ = 'name', 'model', 'id'
+
+    def __new__(cls, name=None, model=None, id=None):
+        """
+        Link(name) | Link(model, id) | Link(name, model, id)
+
+        model = dotted model name
+        id = numeric id of record being linked to
+        name = ir.model.data name of record being linked to
+
+        NB: parameters are positional only [DO NOT pass by keyword]
+        """
+        args = [name, model, id]
+        passed = sum(1 for arg in args if arg)
+        if passed == 0:
+            raise ValueError('invalid link parameters')
+        elif passed == 1:
+            name = name
+            model = None
+            id = 0
+        elif passed == 2:
+            name = None
+            model = name
+            id = model
+        elif passed == 3:
+            name = name
+            model = model
+            id = id
+        if name:
+            link = links_by_name.get(name)
+            if link is not None:
+                return link
+        if model and id:
+            link = cls.links_by_model_id.get((model, id))
+            if link is not None:
+                # only one oev7 name allowed per record
+                if name is not None:
+                    raise DuplicateError('%s:%d is already using %r (attempted to assign %r)'
+                            % (model, id, link.name, name))
+                return link
+        # link does not exist
+        # make new link object and, if needed, create new ir.model.data record
+        if passed == 3:
+            # we have all we need
+            pass
+        elif passed == 2:
+            # create name and ir.model.data record
+            name = '%s_%06d' % (model.replace('.','_'), id)
+            ir_model_data.create(dict(module='oev7', name=name, model=model, res_id=id))
+        elif passed == 1:
+            # check for existing ir.model.data record
+            records = ir_model_data.read([('name','=',name)])
+            if not records:
+                raise ValueError('no ir.model.data record found for %r' % name)
+            rec = records[0]
+            model = rec.model
+            id = rec.res_id
+
+        link = object.__new__(cls)
+        link.name = name
+        link.model = model
+        link.id = id
+        cls.links_by_name[name] = link
+        cls.links_by_model_id[model, id] = link
+        return link
+
+    def __repr__(self):
+        if self.name and not (self.model or self.id):
+            return "Link(%s)" % self.name
+        elif self.model or self.id:
+            return "Link(%s, %s)" % (self.model or '', self.id or '--')
+        elif self.name and self.model and self.id:
+            return "Link(%s, %s, %s)" % (self.name, self.model, self.id)
+
+    @classmethod
+    def prime(cls):
+        for rec in ir_model_data.read([('module','=','oev7')]):
+            link = Link(rec.name, rec.model, rec.res_id)
+            cls.links_by_name[rec.name] = link
+            cls.links_by_model_id[rec.model, rec.id] = link
+
+
+class csv(object):
+    """
+    a unicode-capable csv format
+
+    delimiter:   comma
+    quote:       double quote
+    escape:      backslash (only in quoted strings)
+    line ending: backslash-n
+    quoting:     no - date/time, numeric, boolean, None
+                 yes - everything else
+    """
+
+    def __init__(self, filename, mode, header):
+        if mode not in ('w','r'):
+            raise ValueError("csv only supports modes 'w' and 'r', not %r" % (mode, ))
+        if mode == 'w' and header is True:
+            raise ValueError("csv write mode should have `header=None` or `header=<field_list>`")
+        self.file is None
+        self.filename = filename
+        self.mode = mode
+        self.header = header
+
+    def __enter__(self):
+        if self.file is not None or self.file.closed:
+            self.open()
+        return self
+
+    def __exit__(self, *args):
+        self.file.close()
+
+    def close(self):
+        self.file.close()
+
+    @dualmethod
+    def open(cls, self, filename=None, mode=None, header=None):
+        if self is None:
+            self = cls(filename, mode, header)
+        filename, mode, header = self.filename, self.mode, self.header
+        if self.file is not None and not self.file.closed:
+            raise Exception('%r is already open' % (self.file.name, ))
+        self.file = codecs.open(filename, mode, encoding='utf-8')
+        if mode == 'w' and isinstance(header, (tuple, list)):
+            self.write_header(header)
+        elif mode == 'r' and header == True:
+            self.header = self.read_header()
+
+    def read_header(self):
+        "should only be called on freshly opened files"
+        return self.file.readline().strip().split(',')
+
+    def write_header(self, fields):
+        "should only be called on freshly opened files"
+        self.file.write(','.join(fields))
+        self.file.write('\n')
+
+    def read_row(self):
+        line = self.file.readline()
+        return self.split_line(line)
+
+    def write_row(self, values):
+        if len(values) != len(self.header):
+            if len(values) < len(header):
+                raise CSVError('not enough values: missing %s' % ', '.join(self.header[len(values):]))
+            else:
+                raise CSVError('too many values: %s' % ', '.join(values[len(self.header):]))
+        text = []
+        for field, value in zip(self.header, values):
+            if isinstance(value, basestring):
+                text.append('"%s"' % value.replace('"','\\"'))
+            elif isinstancee(value, Link):
+                text.append(value.name)
+            elif isinstance(value, dates.moments):
+                text.append(dates.as_str(value))
+            elif value in (True, False, None):
+                text.append(str(value))
+            elif isinstance(value, (float, int, long)):
+                text.append(str(value))
+            else:
+                raise CSVError('unknown type: %r [%r]' % (type(value), value))
+        self.file.write(COMMA.join(text))
+
+
+    def split_line(self, line):
+        "embedded newlines not supported"
+        line = iterline(line)
+        values = []
+        chars = []
+        in_string = False
+        for ch in line:
+            if instring:
+                if ch == QUOTE:
+                    chars.append(ch)
+                    in_string = None
+                elif ch == BACKSLASH:
+                    chars.append(next(line))
+                else:
+                    chars.append(ch)
+            elif in_string is None and ch.strip() and ch != COMMA:
+                raise CSVError("data after end-of-string %r" % ''.join(chars))
+            elif not chars and not ch.strip():
+                # skip leading white space
+                continue
+            elif ch == QUOTE and chars:
+                # embedded quotes not allowed
+                raise CSVError("embedded quotes not allowed (apx. pos %d): %r" % (line.pos, line.line))
+            elif ch == QUOTE:
+                chars.append(ch)
+                in_string = True
+            elif ch in (DELIMITER, None):
+                in_string = False
+                value = ''.join(chars)
+                chars = []
+                values.append(self._recover_value(value))
+            else:
+                chars.append(ch)
+        return values
+
+    def _recover_value(value):
+        # is it a string?
+        if value[0] == value[-1] == QUOTE and len(value) >= 2:
+            return value[1:-1]
+        # check for links
+        if '_' in value and '.' in value:
+            if ' ' in value:
+                value = value.split()
+            else:
+                value = [value]
+            return value
+        # common singletons
+        elif value.title() in ('True','False','None'):
+            value = {'True': True, 'False':False, 'None':None}[value.title()]
+            return value
+        # date, time, date/time
+        elif ':' in value or '-' in value:
+            try:
+                return dates.from_str(value)
+            except Exception as exc:
+                raise CSVError('unable to convert %r [%s]' % (value, exc))
+        # now the numbers
+        elif '.' in value:
+            # float
+            try:
+                return float(value)
+            except ValueError:
+                raise ValueError('invalid float value: %r' % (value, ))
+        elif any(c.isdigit() for c in value):
+            # int
+            try:
+                return int(value)
+            except ValueError:
+                raise ValueError('invalid integer value: %r' % (value, ))
+        else:
+            raise ValueError('unknown entity: %r' % (value, ))
+
+class iterline(object):
+    def __init__(self, line):
+        self.line = line.strip()
+        self.pos = 0
+        self.max = len(self.line)
+    def __iter__(self):
+        return self
+    def __next__(self):
+        if self.pos < self.max:
+            ch = self.line[self.pos]
+            self.pos += 1
+            return ch
+        elif self.pos == self.max:
+            self.pos += 1
+            return None
+        else:
+            raise StopIteration
+    next = __next__
 
 def get_imd_data(module):
     """
