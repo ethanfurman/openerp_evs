@@ -1,23 +1,11 @@
-#!/usr/local/sbin/suid-python --virtualenv
+#!/usr/local/sbin/suid-python
 """
-rewrites the shebang line of evs scripts to start with the same
-interpreter that is running this script -- hence, no shebang line
-here, you must start with whichever python you desire
-
-the new scripts are written to the target directory (/usr/local/bin
-in most cases)
-
-also installs stoneleaf_hg.py into sys.path; order of preference:
-- /usr/local/lib/.../site-packages
-- /usr/local/lib/.../dist-packages
-- .../pymodules/...
+scripts are updated in their current locations
 """
 from __future__ import print_function
+import sys
 
 from antipathy import Path
-import os
-import re
-import sys
 
 new_shebang = '#!' + sys.executable
 bins = (
@@ -56,26 +44,3 @@ for current, dirs, files in Path.walk('.'):
             fh.write(new_shebang + '\n')
         fh.write(data)
         fh.close()
-
-def combinate(iter1, iter2):
-    for i in iter1:
-        for j in iter2:
-            yield i, j
-
-for module in ('stoneleaf_hg.py', 'hg_tools.py'):
-    for preference, dest in combinate(
-            ('%s/lib/python.*/site-packages$' % os.environ['VIRTUAL_ENV'],
-            '/usr/local/lib/.*/site-packages$',
-            '/usr/local/lib/.*/dist-packages$',
-            '.*/pymodules/python%d.%d$' % sys.version_info[:2],
-            ),
-            sys.path,
-            ):
-        if re.match(preference, dest):
-            break
-    else:
-        print('unable to locate destination for', module)
-        raise SystemExit(1)
-    print('copying %s to %s' % (module, dest))
-    Path(module).copy(dest)
-
