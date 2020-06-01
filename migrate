@@ -5,10 +5,11 @@ aid for transferring data from OpenERP v7.0 to Odoo v13.
 
 from __future__ import print_function
 
+import aenum
 import codecs
 import os
 from antipathy import Path
-from openerplib import get_connection, AttrDict
+from openerplib import get_connection, AttrDict, Many2One
 from openerplib import dates
 from scription import *
 
@@ -74,6 +75,7 @@ def configure(module, path, force):
         binaries = []
         functions = []
         relations = []
+        attachments = []
         for field_name, field in sorted(oe_model._columns.items()):
             if field_name == 'id':
                 continue
@@ -84,7 +86,10 @@ def configure(module, path, force):
                 continue
             elif field.type in ('many2many', 'many2one'):
                 target_tables.add(field.relation)
-                relations.append(field_name)
+                if field.relation == 'ir.attachment':
+                    attachments.append(field_name)
+                else:
+                    relations.append(field_name)
             elif field.type == 'binary':
                 binaries.append(field_name)
             else:
@@ -168,20 +173,18 @@ def export(module, path, clean, field_type, name):
             fields_needed.extend(binary_fields)
         if 'relation' in field_type:
             fields_needed.extend(relation_fields)
-        data = oe_model.read(
-                section.domain,
-                fields=fields_needed,
-                context=section.context,
-                )
+        data = oe_model.read(section.domain, fields_needed, section.context)
         if create_names:
             print('  - assigning names in ir.model.data')
             assign_export_names(section, data)
         if 'standard' in field_type:
             print('  - exporting standard fields')
+            export_standard_fields(module, path, section, data)
         if 'binary' in field_type:
             print('  - exporting binary fields')
         if 'relation' in field_type:
             print('  - exporting relation fields')
+            export_relation_fields(module, path, section, data)
 
 
         # csv_header = get_section_export_header(section)
@@ -201,6 +204,15 @@ def _import():
     """
 
 # helpers
+
+@aenum.export(globals())
+class constants(aenum.Constant):
+    QUOTE = '"'
+    BACKSLASH = '\\'
+    DELIMITER = ','
+    EOL = '\n'
+
+
 class CSVError(ValueError):
     "error processing csv data"
 
@@ -250,11 +262,13 @@ def assign_export_names(section, records):
 
 def export_standard_fields(module, path, section, data):
     """
-    create module_new_model.csv file
+    create model.csv file
     id field is replaced with ir.model.data name
     """
-    standard_file = path / '%s_%s.csv' % (module, (section.new_model_name or section.model_name).replace('.','_'))
-    fields = ['id'] + sorted(section.fields)
+    standard_file = path / '%s.csv' % (section.new_model_name or section.model_name).replace('.','_')
+    print('    ==>', standard_file)
+    fields = ['id'] + sorted(section.relations)
+    oe_model = oe.get_model(section.model_name)
     with csv(standard_file, 'w', header=fields) as writer:
         for rec in data:
             row = [Link(section.model_name, rec.id)]
@@ -268,11 +282,29 @@ def export_binary_fields(module, path, section, data):
     export binary values, one per file, as ir.model.data name and field name
     """
 
+
 def export_relation_fields(module, path, section, data):
     """
-    create module_model_relations.csv file
+    create model_relations.csv file
     values are space-separated ir.model.data names
     """
+    relation_file = path / '%s_relations.csv' % (section.new_model_name or section.model_name).replace('.','_')
+    print('    ==>', relation_file)
+    fields = ['id'] + sorted(section.relations)
+    with csv(relation_file, 'w', header=fields) as writer:
+        for rec in data:
+            row = [Link(section.model_name, rec.id)]
+            for f in fields[1:]:
+                # all values are links 
+                values = rec[f]
+                if not values:
+                    row.append(False)
+                elif isinstance(values, Many2One):
+                    row.append([Link(values.model, values.id)])
+                else:
+                    # a list
+                    row.append([Link(v.model, v.id) for v in values])
+            writer.write_row(row)
 
 class dualmethod(object):
     "passes both class and self to function"
@@ -281,7 +313,7 @@ class dualmethod(object):
         descriptor.func = func
         descriptor.__doc__ = doc or func.__doc__
 
-    def __get__(descriptor, cls, instance):
+    def __get__(descriptor, instance, cls):
         return lambda *args, **kwds: descriptor.func(cls, instance, *args, **kwds)
 
 
@@ -312,15 +344,11 @@ class Link(object):
             model = None
             id = 0
         elif passed == 2:
-            name = None
-            model = name
             id = model
-        elif passed == 3:
-            name = name
-            model = model
-            id = id
+            model = name
+            name = None
         if name:
-            link = links_by_name.get(name)
+            link = cls.links_by_name.get(name)
             if link is not None:
                 return link
         if model and id:
@@ -390,13 +418,13 @@ class csv(object):
             raise ValueError("csv only supports modes 'w' and 'r', not %r" % (mode, ))
         if mode == 'w' and header is True:
             raise ValueError("csv write mode should have `header=None` or `header=<field_list>`")
-        self.file is None
+        self.file = None
         self.filename = filename
         self.mode = mode
         self.header = header
 
     def __enter__(self):
-        if self.file is not None or self.file.closed:
+        if self.file is None or self.file.closed:
             self.open()
         return self
 
@@ -426,7 +454,7 @@ class csv(object):
     def write_header(self, fields):
         "should only be called on freshly opened files"
         self.file.write(','.join(fields))
-        self.file.write('\n')
+        self.file.write(EOL)
 
     def read_row(self):
         line = self.file.readline()
@@ -441,9 +469,19 @@ class csv(object):
         text = []
         for field, value in zip(self.header, values):
             if isinstance(value, basestring):
-                text.append('"%s"' % value.replace('"','\\"'))
-            elif isinstancee(value, Link):
+                text.append(
+                        '"%s"' % value
+                            .replace('\\', '\\\\')
+                            .replace('"','\\"')
+                            .replace('\n','\\n')
+                            .replace('\t','\\t')
+                            )
+            elif isinstance(value, Link):
                 text.append(value.name)
+            elif isinstance(value, list):
+                if not all(isinstance(v, Link) for v in value):
+                    raise CSVError("non-Link type in list: %s" % (value, ))
+                text.append(' '.join([v.name for v in value]))
             elif isinstance(value, dates.moments):
                 text.append(dates.as_str(value))
             elif value in (True, False, None):
@@ -452,7 +490,8 @@ class csv(object):
                 text.append(str(value))
             else:
                 raise CSVError('unknown type: %r [%r]' % (type(value), value))
-        self.file.write(COMMA.join(text))
+        self.file.write(DELIMITER.join(text))
+        self.file.write(EOL)
 
 
     def split_line(self, line):
@@ -464,13 +503,15 @@ class csv(object):
         for ch in line:
             if instring:
                 if ch == QUOTE:
-                    chars.append(ch)
                     in_string = None
                 elif ch == BACKSLASH:
-                    chars.append(next(line))
-                else:
-                    chars.append(ch)
-            elif in_string is None and ch.strip() and ch != COMMA:
+                    ch = next(line)
+                    if ch == 'n':
+                        ch = '\n'
+                    elif ch == 't':
+                        ch = '\t'
+                chars.append(ch)
+            elif in_string is None and ch.strip() and ch != DELIMITER:
                 raise CSVError("data after end-of-string %r" % ''.join(chars))
             elif not chars and not ch.strip():
                 # skip leading white space
