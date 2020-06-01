@@ -1,0 +1,146 @@
+#!/usr/local/sbin/suid-python --virtualenv
+from __future__ import print_function, unicode_literals
+
+from scription import *
+from antipathy import Path
+from dbf import Date
+import os
+
+VIRTUAL_ENV = os.environ.get('VIRTUAL_ENV')
+
+# setup
+
+REPOS = (
+        '/opt/bin/evs',
+        '/opt/falcon/openerp',
+        '/opt/falcon/openerp/addons',
+        '/opt/falcon/lib/python2.7/site-packages',
+        '/home/ethan/source',
+        '/home/openerp/odoo13',
+        )
+
+CMD = '''git log --after=%s --before=%s --pretty="format:%%cI  %%h  %%s" --name-only'''
+
+# helpers
+
+def date_from_ym(text):
+    try:
+        year, month = text.split('-')
+        return Date(int(year), int(month), 1)
+    except Exception as exc:
+        abort('DATE should by YYYY-MM [%s]' % exc)
+
+def find_repos(path):
+    """
+    yields paths that are git repos
+    """
+    if not path:
+        path = REPOS
+    else:
+        path = (path, )
+    for p in path:
+        p = Path(p)
+        depth = p.count('/')
+        for current, dirs, files in p.walk():
+            print('looking in', current, verbose=3)
+            if current.count('/') >= (depth+2):
+                dirs[:] = []
+            if '.bak/' in current or current.endswith('.bak'):
+                dirs[:] = []
+            if '.git' in dirs or '.git' in files:
+                yield current
+                dirs[:] = []
+            else:
+                dirs[:] = [q for q in dirs if not q.startswith('.')]
+
+def process(text):
+    # look for groups of lines and extract desired info
+    lines = list(reversed(text.strip().split('\n')))
+    while lines:
+        line = lines.pop().strip()
+        datetime = short_hash = desc = None
+        files = []
+        try:
+            datetime, short_hash, desc = line.split(None, 2)
+            if desc.strip().lower() == 'merge':
+                continue
+        except ValueError:
+            # skip line
+            continue
+        while lines:
+            line = lines.pop().strip()
+            if not line:
+                break
+            elif line.startswith(datetime[:8]):
+                # no files
+                lines.append(line)
+                break
+            files.append(line.strip())
+        yield datetime, short_hash, desc, files
+
+
+# API
+
+@Command(
+        date=Spec('YYYY-MM of month to examine', type=date_from_ym),
+        repo=Spec('repository to check [default: search]', force_default=None),
+        )
+def git_commits(date, repo):
+    print('Date entered:  %r' % date)
+    since = date.replace(delta_day=-1)
+    until = date.replace(delta_month=+1)
+    print('Range: %s - %s' % (since, until))
+    #
+    # check each repo
+    #
+    results = {}
+    for repo in find_repos(repo):
+        print(repo, verbose=2)
+        job = Execute(CMD % (since, until), cwd=repo)
+        print(job.stdout, verbose=2)
+        if not job.stdout.strip():
+            continue
+        if job.stderr:
+            abort(job.stderr)
+        for datetime, short_hash, desc, files in process(job.stdout):
+            date = datetime[:10]
+            item = datetime, repo, short_hash, desc, '\n'.join(files)
+            results.setdefault(date, {}).setdefault(repo, []).append(item)
+    #
+    # build the table
+    #
+    table = [('date','repo','hash','description','files')]
+    # for date, items in sorted(results.items(), key=lambda p:(p[0],p[1][0])):
+    for date, repos in sorted(results.items()):
+        table.append(None)
+        first_date = True
+        between_repos = False
+        echo(repos.items())
+        for repo, commits in sorted(repos.items(), key=lambda p:(p[0],p[1][0][0])):
+            if between_repos:
+                table.append(('', '', None, None, None))
+            first_repo = True #_, repo, short_hash, desc = items.pop(0)
+            # table.append((date, repo, short_hash, desc))
+            # last_repo = repo
+            between_commits = False
+            for _, repo, short_hash, desc, files in commits:
+                if between_commits:
+                    table.append(('', '', '', '', ''))
+                if not first_repo:
+                    repo = ''
+                else:
+                    first_repo = False
+                if not first_date:
+                    date = ''
+                else:
+                    first_date = False
+                table.append((date, repo, short_hash, desc, files))
+                between_commits = True
+            between_repos = True
+    #
+    # display the table
+    #
+    echo(table, border='table')
+
+
+Main()
