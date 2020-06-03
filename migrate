@@ -9,6 +9,7 @@ import aenum
 import codecs
 import os
 from antipathy import Path
+from base64 import b64encode, b64decode
 from openerplib import get_connection, AttrDict, Many2One
 from openerplib import dates
 from scription import *
@@ -39,8 +40,10 @@ def configure(module, path, force):
     path /= '.migrate'
     print('  ==>', path)
     if not path.exists():
-        print('creating path')
+        print('creating paths')
         path.mkdir()
+        path.mkdir('binary')
+        path.mkdir('attachments')
     config_file = path / 'migrate.ini'
     if force and config_file.exists():
         print('removing', config_file)
@@ -111,10 +114,14 @@ def configure(module, path, force):
         module=Spec('module to process', ),
         path=Spec('location of .migrate directory', OPTION, None, type=Path),
         clean=Spec('remove existing data files (not migrate.ini)', FLAG, None),
-        field_type=Spec('field types to export', MULTI, choices='standard binary relation'),
         name=Spec('add ir.model.names for each record', FLAG),
+        field_type=Spec(
+                'field types to export',
+                MULTI,
+                choices='standard binary relation all',
+                ),
         )
-def export(module, path, clean, field_type, name):
+def export(module, path, clean, name, field_type):
     """
     export data from current virtualenv's OpenERP/Odoo installation
     - works on one specified module at a time
@@ -127,6 +134,8 @@ def export(module, path, clean, field_type, name):
       links using ir.model.data names
     - 0th row of csv is exported field names
     """
+    if 'all' in field_type:
+        field_type = ('standard', 'binary', 'relation')
     connect_oe()
     print('calculating path')
     if not path:
@@ -144,18 +153,21 @@ def export(module, path, clean, field_type, name):
         # remove data files, leave ir.model.data entries alone
         for current, dirs, files in path.walk(topdown=False):
             for d in dirs:
-                print('removing', current/d)
+                print('removing', current/d, verbose=3)
                 current.rmdir(d)
             if current == path:
                 files = [f for f in files if f != 'migrate.ini']
             for f in files:
-                print('unlinking', current/f)
+                print('unlinking', current/f, verbose=3)
                 current.unlink(f)
     #
     if not (name or field_type):
         return
     print('getting ir.model.data links')
     Link.prime()
+    print('creating subdirectories')
+    path.mkdir('binary')
+    path.mkdir('attachments')
     print('processing section:')
     for name, section in config:
         # make sure it's a section
@@ -165,33 +177,31 @@ def export(module, path, clean, field_type, name):
         oe_model = oe.get_model(section.model_name)
         standard_fields = section.fields
         binary_fields = section.binaries
+        attachment_fields = section.attachments
         relation_fields = section.relations
         fields_needed = ['id']
         if 'standard' in field_type:
-            fields_needed.extend(standard_fields)
+            fields_needed.extend(section.fields)
         if 'binary' in field_type:
-            fields_needed.extend(binary_fields)
+            fields_needed.extend(section.binaries)
+            fields_needed.extend(section.attachments)
         if 'relation' in field_type:
-            fields_needed.extend(relation_fields)
+            fields_needed.extend(section.relations)
+        print('needed fields:', fields_needed, verbose=3)
         data = oe_model.read(section.domain, fields_needed, section.context)
         if create_names:
-            print('  - assigning names in ir.model.data')
+            print('  - assigning names in ir.model.data', verbose=2)
             assign_export_names(section, data)
         if 'standard' in field_type:
-            print('  - exporting standard fields')
+            print('  - exporting standard fields', verbose=2)
             export_standard_fields(module, path, section, data)
-        if 'binary' in field_type:
-            print('  - exporting binary fields')
         if 'relation' in field_type:
-            print('  - exporting relation fields')
+            print('  - exporting relation fields', verbose=2)
             export_relation_fields(module, path, section, data)
-
-
-        # csv_header = get_section_export_header(section)
-
-
-
-
+        if 'binary' in field_type:
+            print('  - exporting binary/attachment fields', verbose=2)
+            export_binary_fields(module, path/'binary', section, data)
+            export_attachment_fields(module, path/'attachments', section, data)
 
 
 @Command()
@@ -220,7 +230,7 @@ class DuplicateError(ValueError):
     "model:id already assigned a name in ir.model.data"
 
 def connect_oe():
-    global oe, ir_model_data
+    global oe, ir_model_data, ir_attachment
     cfg = OrmFile(config, types={'_path':Path})
     oe = get_connection(
             hostname=cfg.openerp.host,
@@ -229,6 +239,7 @@ def connect_oe():
             password=cfg.openerp.pw,
             )
     ir_model_data = oe.get_model('ir.model.data')
+    ir_attachment = oe.get_model('ir.attachment')
 
 def assign_export_names(section, records):
     """
@@ -260,38 +271,86 @@ def assign_export_names(section, records):
         preexisting_names[name] = new_rec
         preexisting_ids[model, new_id] = new_rec
 
-def export_standard_fields(module, path, section, data):
-    """
-    create model.csv file
-    id field is replaced with ir.model.data name
-    """
-    standard_file = path / '%s.csv' % (section.new_model_name or section.model_name).replace('.','_')
-    print('    ==>', standard_file)
-    fields = ['id'] + sorted(section.relations)
-    oe_model = oe.get_model(section.model_name)
-    with csv(standard_file, 'w', header=fields) as writer:
-        for rec in data:
-            row = [Link(section.model_name, rec.id)]
-            for f in fields[1:]:
-                row.append(rec[f])
-            writer.write_row(row)
-    
+def export_attachment_fields(module, path, section, data):
+    if not section.attachments:
+        # no such fields in this table
+        print('    --> no attachments in this model', verbose=2)
+        return
+    model = section.model_name
+    model_name = (section.new_model_name or model).replace('.','_')
+    path /= model_name
+    if not path.exists():
+        path.mkdir()
+    file_template = '%(imd_name)s_%(field_name)s_%(disk_name)s'
+    print('    ==>', path, verbose=2)
+    for rec in data:
+        link = Link(model, rec.id)
+        for field_name in section.attachments:
+            attachments = rec[field_name]
+            for attach in attachments:
+                # attachments is a list of Many2one records
+                attach = ir_attachment.read(attach.id, ['datas_fname', 'datas',])
+                # check for duplicate file name
+                file_name = file_template % {
+                        'imd_name':link.name,
+                        'field_name':field_name,
+                        'disk_name':attach.datas_fname,
+                        }
+                file_name = file_name.replace(' ','%20').replace('/','%2f')
+                if path.exists(file_name):
+                    file_name += '1'
+                    if path.exists(file_name):
+                        file_name[-1] = '2'
+                        if path.exists(file_name):
+                            file_name[-1] = '3'
+                            if path.exists(file_name):
+                                error('too many copies of %r, skipping' % file_name[-1])
+                                continue
+                attachment = b64encode(attach.datas or bytes())
+                with open(path/file_name, 'wb') as f:
+                    f.write(attachment)
 
 def export_binary_fields(module, path, section, data):
     """
-    export binary values, one per file, as ir.model.data name and field name
+    export binary values, one per field, as ir.model.data name and field name (b64-encoded)
     """
-
+    if not section.binaries:
+        # no such fields in this table
+        print('    --> no binaries in this model', verbose=2)
+        return
+    model = section.model_name
+    model_name = (section.new_model_name or model).replace('.','_')
+    path /= model_name
+    if not path.exists():
+        path.mkdir()
+    print('    ==>', path, verbose=2)
+    file_template = path / '%(imd_name)s_%(field_name)s'
+    for rec in data:
+        link = Link(model, rec.id)
+        for field_name in section.binaries:
+            binary = rec[field_name]
+            if binary:
+                binary = b64encode(binary)
+                file_name = file_template % {'imd_name':link.name, 'field_name':field_name}
+                with open(file_name, 'wb') as f:
+                    f.write(binary)
 
 def export_relation_fields(module, path, section, data):
     """
     create model_relations.csv file
     values are space-separated ir.model.data names
     """
-    relation_file = path / '%s_relations.csv' % (section.new_model_name or section.model_name).replace('.','_')
-    print('    ==>', relation_file)
+    if not section.relations:
+        # no such fields in this table
+        print('    --> no relations in this model', verbose=2)
+        return
     fields = ['id'] + sorted(section.relations)
-    with csv(relation_file, 'w', header=fields) as writer:
+    # update field names for header as needed
+    header_fields = [OrmSection.get(section, 'field_%s' % f, f)  for f in fields]
+    oe_model = oe.get_model(section.model_name)
+    relation_file = path / '%s.relations.csv' % (section.new_model_name or section.model_name).replace('.','_')
+    print('    ==>', relation_file, verbose=2)
+    with csv(relation_file, 'w', header=header_fields) as writer:
         for rec in data:
             row = [Link(section.model_name, rec.id)]
             for f in fields[1:]:
@@ -306,6 +365,27 @@ def export_relation_fields(module, path, section, data):
                     row.append([Link(v.model, v.id) for v in values])
             writer.write_row(row)
 
+def export_standard_fields(module, path, section, data):
+    """
+    create model.csv file
+    id field is replaced with ir.model.data name
+    """
+    standard_file = path / '%s.csv' % (section.new_model_name or section.model_name).replace('.','_')
+    print('    ==>', standard_file, verbose=2)
+    fields = ['id'] + sorted(section.fields)
+    # update field names for header as needed
+    header_fields = [OrmSection.get(section, 'field_%s' % f, f)  for f in fields]
+    oe_model = oe.get_model(section.model_name)
+    with csv(standard_file, 'w', header=header_fields) as writer:
+        for rec in data:
+            row = [Link(section.model_name, rec.id)]
+            for f in fields[1:]:
+                value = rec[f]
+                # possibly alter value
+                value = OrmSection.get(section, 'value_%s' % f, {}).get(value, value)
+                row.append(value)
+            writer.write_row(row)
+    
 class dualmethod(object):
     "passes both class and self to function"
 
@@ -335,7 +415,8 @@ class Link(object):
 
         NB: parameters are positional only [DO NOT pass by keyword]
         """
-        args = [name, model, id]
+        print('received:', name, model, id, verbose=3)
+        args = (name, model, id)
         passed = sum(1 for arg in args if arg)
         if passed == 0:
             raise ValueError('invalid link parameters')
@@ -347,11 +428,14 @@ class Link(object):
             id = model
             model = name
             name = None
+        print('looking for:', name, model, id, verbose=3)
         if name:
+            print('checking by name', verbose=3)
             link = cls.links_by_name.get(name)
             if link is not None:
                 return link
         if model and id:
+            print('checking by model/id', verbose=3)
             link = cls.links_by_model_id.get((model, id))
             if link is not None:
                 # only one oev7 name allowed per record
@@ -365,10 +449,15 @@ class Link(object):
             # we have all we need
             pass
         elif passed == 2:
+            if not (model and id):
+                raise ValueError("Link called incorrectly: Link%s" % (args, ))
             # create name and ir.model.data record
             name = '%s_%06d' % (model.replace('.','_'), id)
+            print('creating %s with %r, %r' % (name, model, id), verbose=4)
             ir_model_data.create(dict(module='oev7', name=name, model=model, res_id=id))
         elif passed == 1:
+            if not name:
+                raise ValueError("Link called incorrectly: Link%s" % (args, ))
             # check for existing ir.model.data record
             records = ir_model_data.read([('name','=',name)])
             if not records:
@@ -376,7 +465,6 @@ class Link(object):
             rec = records[0]
             model = rec.model
             id = rec.res_id
-
         link = object.__new__(cls)
         link.name = name
         link.model = model
@@ -397,9 +485,7 @@ class Link(object):
     def prime(cls):
         for rec in ir_model_data.read([('module','=','oev7')]):
             link = Link(rec.name, rec.model, rec.res_id)
-            cls.links_by_name[rec.name] = link
-            cls.links_by_model_id[rec.model, rec.id] = link
-
+        print('%d links found' % len(cls.links_by_name), verbose=4)
 
 class csv(object):
     """
