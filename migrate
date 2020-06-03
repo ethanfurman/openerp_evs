@@ -10,7 +10,7 @@ import codecs
 import os
 from antipathy import Path
 from base64 import b64encode, b64decode
-from openerplib import get_connection, AttrDict, Many2One
+from openerplib import get_connection, AttrDict, Many2One, Fault
 from openerplib import dates
 from scription import *
 
@@ -66,8 +66,17 @@ def configure(module, path, force):
     target_tables = set()
     configured_models = set()
     for model, d in sorted(module_tables.items()):
-        print('  -', model)
-        oe_model = oe.get_model(model)
+        print('  -', model, end='')
+        try:
+            oe_model = oe.get_model(model)
+        except Fault as exc:
+            if ("%s doesn't exist" % model) in str(exc):
+                error(".......doesn't exist")
+                continue
+            else:
+                print()
+                raise
+        print()
         configured_models.add(oe_model)
         section_name = model.replace('.','_')
         section = config[module][section_name] = OrmSection(
@@ -106,6 +115,9 @@ def configure(module, path, force):
     missing_relations = target_tables - configured_models
     if missing_relations:
         echo('tables in m2x relations not configured:\n- %s' % '\n- '.join(sorted(missing_relations)))
+        section = config['not_configured'] = OrmSection(
+                comment='\n'.join(sorted(missing_relations))
+                )
     OrmFile.save(config)
 
 
@@ -672,8 +684,7 @@ class iterline(object):
 
 def get_imd_data(module):
     """
-    return dict of dot-model name to name
-
+    return dict of dot-model name to name for non-Transient models
     """
     ir_model = oe.get_model('ir.model')
     ir_model_data = oe.get_model('ir.model.data')
@@ -686,7 +697,7 @@ def get_imd_data(module):
     module_tables = dict(
             (r.model, dict(string=r.name, imd_name=module_table_model[r.id]))
             for r in ir_model.read(
-                    [('id','in',module_table_model.keys())],
+                    [('id','in',module_table_model.keys()),('osv_memory','=',False)],
                     fields=['name','model'],
                     ))
     return module_tables
