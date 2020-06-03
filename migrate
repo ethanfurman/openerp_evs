@@ -175,10 +175,6 @@ def export(module, path, clean, name, field_type):
             continue
         print('-', name)
         oe_model = oe.get_model(section.model_name)
-        standard_fields = section.fields
-        binary_fields = section.binaries
-        attachment_fields = section.attachments
-        relation_fields = section.relations
         fields_needed = ['id']
         if 'standard' in field_type:
             fields_needed.extend(section.fields)
@@ -212,13 +208,16 @@ def _import():
     - works on one specified module at a time
     - can specify a configuration file for table/field name changes
     """
+    b64decode
 
 # helpers
+
+QUOTE = ESCAPE = DELIMITER = EOL = None     # appease the linter
 
 @aenum.export(globals())
 class constants(aenum.Constant):
     QUOTE = '"'
-    BACKSLASH = '\\'
+    ESCAPE = '\\'
     DELIMITER = ','
     EOL = '\n'
 
@@ -347,7 +346,6 @@ def export_relation_fields(module, path, section, data):
     fields = ['id'] + sorted(section.relations)
     # update field names for header as needed
     header_fields = [OrmSection.get(section, 'field_%s' % f, f)  for f in fields]
-    oe_model = oe.get_model(section.model_name)
     relation_file = path / '%s.relations.csv' % (section.new_model_name or section.model_name).replace('.','_')
     print('    ==>', relation_file, verbose=2)
     with csv(relation_file, 'w', header=header_fields) as writer:
@@ -375,7 +373,6 @@ def export_standard_fields(module, path, section, data):
     fields = ['id'] + sorted(section.fields)
     # update field names for header as needed
     header_fields = [OrmSection.get(section, 'field_%s' % f, f)  for f in fields]
-    oe_model = oe.get_model(section.model_name)
     with csv(standard_file, 'w', header=header_fields) as writer:
         for rec in data:
             row = [Link(section.model_name, rec.id)]
@@ -484,7 +481,7 @@ class Link(object):
     @classmethod
     def prime(cls):
         for rec in ir_model_data.read([('module','=','oev7')]):
-            link = Link(rec.name, rec.model, rec.res_id)
+            Link(rec.name, rec.model, rec.res_id)
         print('%d links found' % len(cls.links_by_name), verbose=4)
 
 class csv(object):
@@ -548,7 +545,7 @@ class csv(object):
 
     def write_row(self, values):
         if len(values) != len(self.header):
-            if len(values) < len(header):
+            if len(values) < len(self.header):
                 raise CSVError('not enough values: missing %s' % ', '.join(self.header[len(values):]))
             else:
                 raise CSVError('too many values: %s' % ', '.join(values[len(self.header):]))
@@ -587,10 +584,10 @@ class csv(object):
         chars = []
         in_string = False
         for ch in line:
-            if instring:
+            if in_string:
                 if ch == QUOTE:
                     in_string = None
-                elif ch == BACKSLASH:
+                elif ch == ESCAPE:
                     ch = next(line)
                     if ch == 'n':
                         ch = '\n'
