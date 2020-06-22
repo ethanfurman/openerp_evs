@@ -35,7 +35,6 @@ def field_access(model, where, timeout):
         try:
             attempt = Execute(command, timeout=timeout)
         except:
-            raise
             echo('TIMEOUT')
         else:
             if attempt.returncode:
