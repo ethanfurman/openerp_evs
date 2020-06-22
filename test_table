@@ -1,0 +1,62 @@
+#!/usr/local/sbin/suid-python --virtualenv
+
+# setup
+
+from __future__ import print_function
+from scription import *
+from antipathy import Path
+from openerplib import get_connection
+from os import environ
+
+CONFIG = OrmFile(Path(environ['VIRTUAL_ENV']) / 'config/fnx.ini')
+
+# API
+
+@Command(
+        model=Spec('model to test'),
+        where=Spec('condition to use to narrow returned data set', OPTION),
+        timeout=Spec('how long to wait for results [default: 10 seconds]', OPTION, force_default=10),
+        )
+def field_access(model, where, timeout):
+    """
+    attempt to get record(s) one field at a time
+
+    this helps narrow down corruption/damage between tables
+    """
+    connect_oe()
+    model = oe.get_model(model)
+    echo('test %s with %r and timeout of %r' % (model.model_name, where, timeout))
+    for field_name, field in model._all_columns.items():
+        echo('  %s:' % field_name, end='')
+        command = '/opt/bin/oe-export sql "select %s from %s' % (field_name, model.model_name)
+        if where:
+            command += ' where %s' % (where, )
+        command += '"'
+        try:
+            attempt = Execute(command, timeout=timeout)
+        except:
+            raise
+            echo('TIMEOUT')
+        else:
+            if attempt.returncode:
+                echo('ERROR:', (attempt.stdout+attempt.stderr).replace('\n','/'))
+            else:
+                echo('success')
+
+        
+
+
+
+# helpers
+
+def connect_oe():
+    global oe
+    oe = get_connection(
+        hostname=CONFIG.openerp.host,
+        database=CONFIG.openerp.db,
+        login=CONFIG.openerp.user,
+        password=CONFIG.openerp.pw,
+        )
+
+
+Run()
