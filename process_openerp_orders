@@ -1,0 +1,40 @@
+#!/usr/local/bin/python2
+
+from glob import glob
+from shutil import move
+import datetime
+tomorrow = (datetime.date.today() + datetime.timedelta(days=1)).strftime("%m%d%y")
+
+newordlist = glob("/home/openerp/sandbox/openerp/var/fis_integration/orders/*.txt")
+
+try:
+  seq = int(open("/home/openerp/sandbox/openerp/var/fis_integration/orders/number.seq").read())
+except:
+  seq = 10000
+
+for ord in newordlist:
+  order = open(ord).readlines()
+  # customer login may have dashes, but transmitter numbers never will
+  # so split on the right-most dash
+  cust,trans = order[0].strip().rsplit("-", 1)
+  #order looks like ['LUCKY-407B-900002', 'RSD-041920', 'PON-8172943', '002080 - 1 - 25 lb', '001045 - 1 - 25 lb', '']
+  rsd = [xx for xx in order if xx.startswith('RSD')]
+  #rsd will be ['RSD-041920'] if specified
+  pon = [xx for xx in order if xx.startswith('PON')]
+  #pon will be ['PON-8172943'] if specified
+  if pon: PON="-".split(pon[0])[-1]
+  else: PON="0000000037"
+  if rsd: RSD="-".split(rsd[0])[-1]
+  else: RSD=tomorrow
+  hdr="C%s+P%s+D%s+" % (trans,PON,RSD)
+  rec=hdr
+  for line in order[1:]:
+    item,qty,dummypacksize = (val.strip() for val in line.strip().split('-'))
+    if qty<>"0":
+      rec+="I%s+Q%s+" % (item,qty)
+  extfile = "/mnt/11-111/home/eoe/%s.ext" % seq
+  open(extfile,'w').write(rec)
+  seq=seq+1
+  move(ord,"/home/openerp/sandbox/openerp/var/fis_integration/orders/archive/")
+
+open("/home/openerp/sandbox/openerp/var/fis_integration/orders/number.seq",'w').write("%s" % seq)
