@@ -16,7 +16,7 @@ REPOS = (
         '/opt/falcon/openerp/addons',
         '/opt/falcon/lib/python2.7/site-packages',
         '/home/ethan/source',
-        '/home/openerp/odoo13',
+        '/home/openerp/sandbox/odoo13/addons',
         )
 
 CMD = '''git log --after=%s --before=%s --pretty="format:%%cI  %%h  %%s" --name-only'''
@@ -116,7 +116,8 @@ def git_commits(date, repo):
         first_date = True
         between_repos = False
         echo(repos.items())
-        for repo, commits in sorted(repos.items(), key=lambda p:(p[0],p[1][0][0])):
+        for repo, commits in sorted(repos.items(), key=lambda p: p[0]):
+            commits.sort(key=lambda c: c[0])
             if between_repos:
                 table.append(('', '', None, None, None))
             first_repo = True #_, repo, short_hash, desc = items.pop(0)
