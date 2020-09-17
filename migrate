@@ -588,9 +588,7 @@ class csv(object):
         self.file.write(DELIMITER.join(text))
         self.file.write(EOL)
 
-
     def split_line(self, line):
-        "embedded newlines not supported"
         line = iterline(line)
         values = []
         chars = []
