@@ -176,17 +176,19 @@ def backup(dbs, id, dst, files):
         if TODAY.day == 1:
             print('  backup::5', verbose=2)
             tgz_dbs_file.copy(MONTHLY_STORAGE)
-            tgz_bin_file.copy(MONTHLY_STORAGE)
+            if files:
+                tgz_bin_file.copy(MONTHLY_STORAGE)
             print('  backup::6', verbose=2)
         _remove_excess(DAILY_STORAGE, DAILY_LIMIT)
         _remove_excess(MONTHLY_STORAGE, MONTHLY_LIMIT)
     else:
         print('  backup::7', verbose=2)
         tgz_dbs_file.chown(*ACTUAL_IDS)
-        tgz_bin_file.chown(*ACTUAL_IDS)
-        print('  backup::8', verbose=2)
         tgz_dbs_file.copy(dst or START_DIR)
-        tgz_bin_file.copy(dst or START_DIR)
+        print('  backup::8', verbose=2)
+        if files:
+            tgz_bin_file.chown(*ACTUAL_IDS)
+            tgz_bin_file.copy(dst or START_DIR)
     if failures:
         raise SystemExit('not all databases backed up')
 
