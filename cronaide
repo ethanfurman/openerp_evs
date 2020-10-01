@@ -88,7 +88,7 @@ def seconds2time(seconds):
         result = ('%s %i%s' % (result, amount, unit)).strip()
         if seconds == 0:
             break
-    return result
+    return result or '0s'
 
 # API
 
