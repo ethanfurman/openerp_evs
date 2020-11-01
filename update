@@ -1,4 +1,4 @@
-#!/usr/local/sbin/suid-python --py3
+#!/usr/local/bin/suid-python --py3
 from __future__ import print_function
 
 from antipathy import Path
@@ -88,7 +88,7 @@ def install_to_opt_bin(repo):
         elif len(names) == 2:
             src, dst = names
             src = repo/src
-            dst = opt_bin/dst
+            dst = opt_bin*dst
             if not dst.dirname.exists():
                 dst.dirname.mkdir()
             echo('  %s --> %s' % (names[0], dst))
