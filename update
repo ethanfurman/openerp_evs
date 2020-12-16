@@ -125,7 +125,7 @@ def xamlize(root):
                 if file.ext != '.xaml':
                     continue
                 echo(dirpath/report_name)
-                with open(dirpath/report_name) as src:
+                with open(dirpath/report_name, 'rb') as src:
                     xaml_doc = Xaml(src.read()).document
                     if len(xaml_doc.pages) != 2:
                         raise ValueError('%s should have an xml and an xsl component' % report_name)
@@ -137,7 +137,7 @@ def xamlize(root):
                 if file.ext != '.xaml':
                     continue
                 echo(dirpath/file)
-                with open(dirpath/file) as src:
+                with open(dirpath/file, 'rb') as src:
                     xaml_doc = Xaml(src.read()).document
                     for page in xaml_doc.pages:
                         with open(dirpath/(file.strip_ext() + '.' + page.ml.type), 'wb') as dst:
