@@ -1,0 +1,130 @@
+#!/usr/local/bin/suid-python -py3
+from __future__ import print_function
+
+"""
+search tar'd SQL files for
+ CREATE TABLE res_company
+and
+ COPY res_company
+"""
+
+from scription import *
+from antipathy import Path
+import re
+import tarfile
+
+@Command(
+        sql_file=("sql file from tar to search", ),
+        table=("table to look for in sql file (e.g. res.company)", ),
+        fields=("fields to extract", MULTI),
+        files=Spec("tar files to look in", MULTIREQ, type=Path),
+        )
+def sql_tar_search(sql_file, table, fields, *files):
+    """
+    returns table definition and data
+    """
+    for tar in files:
+        print(tar)
+        tar = tarfile.open(tar)
+        try:
+            print('  locating...')
+            sql_info = tar.getmember(sql_file)
+            print('  extracting...')
+            io_buffer = tar.extractfile(sql_info)
+            print('  searching...')
+            data = search(io_buffer, table, fields)
+            if not data:
+                print('  table %r not found' % table)
+                continue
+            print(data, border='table', verbose=2)
+            # first line is table definition, rest are entries
+            table_def = data.pop(0)
+            offsets = []
+            header = []
+            rows = []
+            for f in fields:
+                try:
+                    pos = table_def.index(f)
+                    offsets.append(pos)
+                    header.append(f)
+                except ValueError:
+                    pass
+            rows.append(header)
+            rows.append(None)
+            if not offsets:
+                print('  fields not found')
+                continue
+            for line in data:
+                row = []
+                for index in offsets:
+                    try:
+                        row.append(line[index])
+                    except IndexError:
+                        echo(offsets)
+                        echo(line)
+                        echo(index)
+                rows.append(row)
+            echo(rows, border='table')
+
+        finally:
+            tar.close()
+
+
+def search(io_buffer, table, fields):
+    """
+    search io_buffer for CREATE TABLE; abort if COPY found first
+    """
+    target = table.replace('.','_')
+    print('    looking for %r as %r' % (table, target))
+    target = table.encode('utf8')
+    new_data = Var(lambda size: io_buffer.read(size))
+    search_data = Var(lambda needle: re.search(needle, data, re.DOTALL))
+    data = b''
+    found_table = found_copy = False
+    keep = 1024
+    while new_data(512):
+        # XXX these searches could still fail if the final data capture is split
+        # inopportunely between reads
+        # a more robust method would just match the initial header, then read the
+        # body of the definition
+        data = data[-keep:] + new_data()
+        if not found_table and search_data(br'CREATE TABLE %s .' % target):
+            start = search_data().start()
+            # found the spot, can we get it all?
+            if not search_data(br'CREATE TABLE %s .(.*?).;' % target):
+                keep = max(1024, 102400-start)
+                continue
+                # abort('size limit interfered with data acquisition -- fix the algorithm!')
+            # restore keep
+            keep = 1024
+            sql_def = search_data().group()
+            print(sql_def.decode('utf8'))
+            # if 'server_pad' in sql_def:
+            found_table = True
+            # else:
+            #     return False
+        elif found_table and search_data(br'COPY %s .' % target):
+            found_copy = True
+            print('found COPY %s' % target.decode('utf8'))
+            start = search_data().start()
+            # found the spot, can we get it all?
+            if not search_data(b'COPY %s .(.*?). FROM stdin;.(.*?)\\\\\\.' % target):
+                keep = max(1024, 102400-start)
+                continue
+                # abort('size limit interfered with data acquisition -- fix the algorithm!')
+            # restore keep
+            keep = 1024
+            lines = [search_data().groups()[0].decode('utf8').split(', ')]
+            lines.extend([
+                line.split('\t')
+                for line in search_data().groups()[1].decode('utf8').split('\n')
+                if line
+                ])
+            return lines
+        elif found_copy:
+            import pdb; pdb.set_trace()
+        elif not found_table and search_data(b'COPY '):
+            return False
+
+Main()
+
