@@ -98,14 +98,14 @@ def search(io_buffer, table, fields):
             # restore keep
             keep = 1024
             sql_def = search_data().group()
-            print(sql_def.decode('utf8'))
+            print(sql_def.decode('utf8'), verbose=3)
             # if 'server_pad' in sql_def:
             found_table = True
             # else:
             #     return False
         elif found_table and search_data(br'COPY %s .' % target):
             found_copy = True
-            print('found COPY %s' % target.decode('utf8'))
+            print('found COPY %s' % target.decode('utf8'), verbose=3)
             start = search_data().start()
             # found the spot, can we get it all?
             if not search_data(b'COPY %s .(.*?). FROM stdin;.(.*?)\\\\\\.' % target):
