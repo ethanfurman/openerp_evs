@@ -1,4 +1,4 @@
-#!/usr/local/sbin/suid-python --py3
+#!/usr/local/bin/suid-python --py3
 """
 scripts are updated in their current locations
 """
