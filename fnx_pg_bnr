@@ -39,10 +39,8 @@ if PGPORT:
     PGDUMPALLCMD += ' -p %s' % PGPORT
 PGDUMPCMD += ' --file=%%(filename)s %%(db)s'
 PGDUMPALLCMD += ' --file=%%(filename)s --globals-only'
-DAILY_STORAGE = Path(pg_settings.daily)
-MONTHLY_STORAGE = Path(pg_settings.monthly)
-DAILY_LIMIT = pg_settings.daily_limit
-MONTHLY_LIMIT = pg_settings.monthly_limit
+STORAGE_1 = Path(pg_settings.storage1)
+STORAGE_2 = Path(pg_settings.storage2)
 TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % pg_settings
 TARDISPLAY = '%(tar)s --list --file %%(target)s' % pg_settings
 TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % pg_settings
@@ -55,6 +53,7 @@ OEDATA = oe_settings.db
 OEPSWD = oe_settings.pw
 
 TODAY = Date.today()
+LEADER = ''  # will get replaced with full path and beginning filename
 POSTGRES_IDS = tuple(pwd.getpwnam('postgres')[2:4])
 OPENERP_IDS = tuple(pwd.getpwnam('openerp')[2:4])
 ACTUAL_IDS = os.getuid(), os.getgid()
@@ -75,10 +74,10 @@ def main(rescue):
     RESCUE = rescue
     #
     if not rescue:
-        if not DAILY_STORAGE.exists():
-            raise SystemExit('%s needs to be created, and owned by postgres' % DAILY_STORAGE)
-        if not MONTHLY_STORAGE.exists():
-            raise SystemExit('%s needs to be created, and owned by postgres' % MONTHLY_STORAGE)
+        if not STORAGE_1.exists():
+            raise SystemExit('%s needs to be created, and owned by postgres' % STORAGE_1)
+        if not STORAGE_2.exists():
+            raise SystemExit('%s needs to be created, and owned by postgres' % STORAGE_2)
     START_DIR = Path.getcwd()
     # _get_pg_port()
     print('  main::1', verbose=2)
@@ -121,7 +120,7 @@ def backup(dbs, id, dst, files):
         if not dbs and not RESCUE and not dst:
             print('  backup::2', verbose=2)
             store = True
-            storage = DAILY_STORAGE
+            storage = _set_storage()
             dbs = _get_dbs_from_postgres()
         else:
             print('  backup::3', verbose=2)
@@ -173,14 +172,7 @@ def backup(dbs, id, dst, files):
     # finally, make a copy in monthly if today is the first day of the month
     # but only if store == True
     if store:
-        if TODAY.day == 1:
-            print('  backup::5', verbose=2)
-            tgz_dbs_file.copy(MONTHLY_STORAGE)
-            if files:
-                tgz_bin_file.copy(MONTHLY_STORAGE)
-            print('  backup::6', verbose=2)
-        _remove_excess(DAILY_STORAGE, DAILY_LIMIT)
-        _remove_excess(MONTHLY_STORAGE, MONTHLY_LIMIT)
+        _remove_excess(storage)
     else:
         print('  backup::7', verbose=2)
         tgz_dbs_file.chown(*ACTUAL_IDS)
@@ -212,10 +204,10 @@ def extract(date, dbs, file):
         abort('must have one of DATE or FILE')
     if date:
         print('  extract::1', verbose=2)
-        found = DAILY_STORAGE.glob('%s*' % date)
+        found = STORAGE_1.glob('%s*' % date)
         if not found:
             print('  extract::2', verbose=2)
-            found = MONTHLY_STORAGE.glob('%s*' % date)
+            found = STORAGE_2.glob('%s*' % date)
             if not found:
                 raise ValueError('no files found for %s' % date)
         if len(found) > 1:
@@ -238,33 +230,31 @@ def extract(date, dbs, file):
 @Command(
         date=('date of archive to list', OPTION, 'd', Date),
         file=('archive file to list', OPTION, 'f', Path),
-        daily=('show all daily backups', FLAG, None),
-        monthly=('show all monthly backups', FLAG),
         )
-def list(date, file, daily, monthly):
+def list(date, file):
     """
     show all tables archived for DATE, or stored in FILE
     """
     print('  list::0', verbose=2)
-    if sum(1 for p in [date, file, daily, monthly] if p) != 1:
-        help('at least one (and only one) of DATE, FILE, DAILY, and MONTHLY may be specified')
-    if daily:
+    if sum(1 for p in [date, file] if p) != 1:
+        help('at least one (and only one) of DATE or FILE may be specified')
+    if not (date or file):
         print('  list::1', verbose=2)
-        for file in sorted(DAILY_STORAGE.glob('*')):
-            echo(file)
-    elif monthly:
-        print('  list::2', verbose=2)
-        for file in sorted(MONTHLY_STORAGE.glob('*')):
+        files = []
+        files = STORAGE_1.glob('*')
+        files.extend(STORAGE_2.glob('*'))
+        files.sort()
+        for file in files:
             echo(file)
     else:
         print('  list::3', verbose=2)
         if not date:
             found = [file]
         else:
-            found = DAILY_STORAGE.glob('%s*' % date)
+            found = STORAGE_1.glob('%s*' % date)
             if not found:
                 print('  list::4', verbose=2)
-                found = MONTHLY_STORAGE.glob('%s*' % date)
+                found = STORAGE_2.glob('%s*' % date)
                 if not found:
                     abort('no files found for %s' % date)
         print('  list::5', verbose=2)
@@ -301,14 +291,14 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     tgz_file = sql_file = user_file = None
     if date:
         print('  restore::1', verbose=2)
-        found = DAILY_STORAGE.glob('%s_pg*' % date)
-        found_user = DAILY_STORAGE.glob('%s_files*' % date)
+        found = STORAGE_1.glob('%s*pg*' % date)
+        found_user = STORAGE_1.glob('%s*files*' % date)
         print('found: ', found, verbose=3)
         print('found_user: ', found_user, verbose=3)
         if not found:
             print('  restore::2', verbose=2)
-            found = MONTHLY_STORAGE.glob('%s_pg*' % date)
-            found_user = MONTHLY_STORAGE.glob('%s_files*' % date)
+            found = STORAGE_2.glob('%s*pg*' % date)
+            found_user = STORAGE_2.glob('%s*files*' % date)
             if not found:
                 abort('no files found for %s' % date)
             if (user_files or config_files) and not found_user:
@@ -473,6 +463,35 @@ def _get_dump_cmds():
     print('gdc::4', verbose=2)
     print('commands are:\n%r\n%r' % (PGDUMPCMD, PGDUMPALLCMD), verbose=3)
 
+def _set_storage():
+    """
+    get the location for today's backup
+    """
+    # M-W-F backups go to STORAGE_1
+    # T-TH-Sa backups go to STORAGE_2
+    # Su and monthly alternate between the two
+    #   Sunday selection is based on odd/even of date.toordinal()
+    #   month selection is based on odd/even of month number
+    #
+    # isoweekday has Sunday as 0
+    #
+    # first priority is month-end
+    # then sundays
+    # then other days
+    #
+    global LEADER
+    locations = [STORAGE_1, STORAGE_2]
+    tomorrow = TODAY.replace(delta_day=1)
+    if tomorrow.day == 1:
+        # month end!
+        LEADER = locations[TODAY.month/2] / TODAY.strftime('%Y-%m-%d_End')
+    elif TODAY.isoweekday() == 0:
+        # sunday!
+        LEADER = locations[TODAY.toordinal/2] / TODAY.strftime('%Y-%m-%d_Sun')
+    else:
+        # some other day!
+        LEADER = locations[TODAY.isoweekday()/2] / TODAY.strftime('%Y-%m-%d_%a')
+
 # def _get_pg_port():
 #     global PORT, PSQLCMD
 #     if PORT is not None:
@@ -526,21 +545,23 @@ def _psql(cmd):
             raise Exception('\n'.join(lines))
     return result.stdout
 
-def _remove_excess(storage, limit):
+def _remove_excess():
     """
-    keep LIMIT days worth of our backups
+    keep one copy of each day's backup
     """
+    # each storage location should have one monthly backup, one weekly backup,
+    # and one each of either MWF or TThSa -- so whichever one we just made, we
+    # can delete its older copy
+    #
+    dirname = LEADER.dirname
+    type = LEADER.split('_')[1]        # type is End, Sun, Mon, Tue, Wed, Thu, Fri, or Sat
+    found = dirname.glob('*%s*' % type)
     try:
-        found_dbs = storage.glob('*_pg91.tar.gz')
-        found_dbs.sort(reverse=True)
-        found_bin = storage.glob('*_files.tar.gz')
-        found_bin.sort(reverse=True)
-        for target in found_dbs[limit:]:
-            target.remove()
-        for target in found_bin[limit:]:
-            target.remove()
+        for f in found:
+            if not f.startswith(LEADER):
+                f.unlink()
     except:
-        print(sys.exc_info(), file=stderr)
+        error(sys.exc_info())
         raise
 
 def _restore_all_dbs(sql_files, dbs):
@@ -675,9 +696,9 @@ def _restore_single_db(sql_file, db, new_db):
 
 def _tgz_dbs(source_path, target_path, id=None):
     if id is None:
-        target = target_path/'%s_pg91.tar.gz' % TODAY
+        target = target_path + '_pg91.tar.gz'
     else:
-        target = target_path/'%s_%s_pg91.tar.gz' % (TODAY, id)
+        target = target_path + '_%s_pg91.tar.gz' % (id, )
     tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(source_path.listdir()))
     print('\narchiving . . .')
     result = Execute(tgz_cmd, cwd=source_path, pty=False, GZIP="--rsyncable")
@@ -732,9 +753,9 @@ def _tgz_files(target_path, id=None):
             targets.append(location)
     # file names collected, now generate tgz file name, and back them up
     if id is None:
-        target = target_path/'%s_files.tar.gz' % TODAY
+        target = target_path + '_files.tar.gz'
     else:
-        target = target_path/'%s_%s_files.tar.gz' % (TODAY, id)
+        target = target_path + '_%s_files.tar.gz' % (id, )
     tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(targets))
     print('\narchiving . . .')
     result = Execute(tgz_cmd, cwd='/', pty=False, GZIP="--rsyncable")
