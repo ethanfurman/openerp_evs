@@ -107,6 +107,43 @@ def install_to_opt_bin(repo):
             dst.chmod(0o6755)
 
 @Command(
+        root=Spec('start directory', ),
+        files=Spec('file permissions', OPTION, force_default='664'),
+        dirs=Spec('directory permissions', OPTION, force_default='775'),
+        )
+def perms(root, files, dirs):
+    """
+    updates file permissions to 664 and directories to 775
+    """
+    f_perms = files
+    d_perms = dirs
+    max_cmd_len = int(Execute('/usr/bin/getconf ARG_MAX').stdout.strip() - 30)
+    file_names = []
+    segments = []
+    dir_names = []
+    for current, dirs, files in Path(root).walk():
+        dir_names.extend([current/d for d in dirs])
+        file_names.extend([current/f for f in files])
+    segment_size = len(files)
+    while file_names:
+        # make sure we don't exceed the commond line length
+        files = ' '.join(file_names[:segment_size])
+        if len(files) >= max_cmd_len:
+            sement_size //= 2
+            continue
+        files_names = file_names[segment_size:]
+        Execute('/bin/chmod %s %s' % (f_perms, files))
+    while dir_names:
+        # make sure we don't exceed the commond line length
+        dirs = ' '.join(dir_names[:segment_size])
+        if len(dirs) >= max_cmd_len:
+            sement_size //= 2
+            continue
+        dir_names = dir_names[segment_size:]
+        Execute('/bin/chmod %s %s' % (f_perms, dirs))
+
+
+@Command(
         )
 def update():
     repo = get_current_repo()
