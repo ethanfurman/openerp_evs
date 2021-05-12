@@ -11,6 +11,7 @@ import os
 search = (
     Path('/usr/lib/pymodules/python2.7'),
     Path('/usr/local/bin'),
+    Path('/opt/bin'),
     Path(os.environ['VIRTUAL_ENV']),
     )
 
@@ -213,6 +214,8 @@ def workhorse(*path):
 #             echo('running version ' + parent.stdout[16:])
 #         echo()
 
+# active code
+
 @Command(
     path=('base path to search', OPTION, 'p', Path),
     )
@@ -239,10 +242,10 @@ def status(*path):
         returncode = history.returncode
         if stdout.startswith('## master...origin/master\n'):
             stdout = stdout[26:]
-        stdout = '\n| '.join(stdout.strip().split('\n'))
+        stdout = '\n| '.join(stdout.strip('\n').split('\n'))
         if stdout:
             stdout = '| ' + stdout
-        stderr = '\n! '.join(stderr.strip().split('\n'))
+        stderr = '\n! '.join(stderr.strip('\n').split('\n'))
         if stderr:
             stderr = '! ' + stderr
         if stdout or stderr or returncode:
@@ -257,7 +260,6 @@ def status(*path):
         if stderr:
             print(verbose=log_level)
             print('-' * 76, verbose=log_level)
-        print(verbose=log_level)
         print(verbose=log_level)
         print(verbose=log_level)
 
