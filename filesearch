@@ -16,9 +16,10 @@ import re
         execute=('run command on each file found (replaceable options: %one %all)', OPTION),
         abort=Spec('quit if any error', FLAG, None, force_default=True),
         env=('only search in $PATH (implies FILES-ONLY)', FLAG, None),
+        blank=('print blank line in between directories', FLAG),
         )
 @Alias('fs')
-def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, abort, *regex):
+def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, abort, blank, *regex):
     "Searches for directories/files that match REGEX in PATH."
     print('files_only: %r\ndirs_only: %r\ntimestamp: %r\nhidden: %r\npath: %r\nexecute: %r\nenv: %r\nregex: %r'
             % (files_only, dirs_only, timestamp, hidden, path, execute, env, regex),
@@ -53,13 +54,17 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, abo
         path = [base]
     if not regex:
         regex = ('.*', )
+    if any(r.startswith(r'^\.') for r in regex):
+        hidden = True
     print('files_only: %r\ndirs_only: %r\ntimestamp: %r\nhidden: %r\npath: %r\nexecute: %r\nenv: %r\nregex: %r'
             % (files_only, dirs_only, timestamp, hidden, path, execute, env, regex),
             border='box',
             verbose=3,
             )
+    output = False
     for search_path in path:
         for tree, dirs, files in search_path.walk():
+            need_newline = True
             print('processing', tree)
             if not execute:
                 print('  ', tree, verbose=2)
@@ -72,7 +77,7 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, abo
             else:
                 for d in dirs:
                     for p in regex:
-                        if not (hidden or (d.startswith('.') and p.startswith('^\.')) or not d.startswith('.')):
+                        if not hidden and d.startswith('.'):
                             skip_dirs.append(d)
                         elif not files_only:
                             if re.search(p, d):
@@ -83,10 +88,14 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, abo
                                     else:
                                         found_dirs.append(target)
                                 else:
+                                    if blank and need_newline:
+                                        echo()
+                                        need_newline = False
+                                        output = True
                                     if timestamp:
-                                        print(datetime.fromtimestamp((tree/d).stat()[8]), '   ', target, verbose=0)       # mtime
+                                        echo(datetime.fromtimestamp((tree/d).stat()[8]), '   ', target)       # mtime
                                     else:
-                                        print(target, verbose=0)       # mtime
+                                        echo(target)       # mtime
                 dirs[:] = [d for d in dirs if d not in skip_dirs]
                 if found_dirs:
                     command(execute % ' '.join(found_dirs), abort)
@@ -94,7 +103,7 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, abo
                 found_files = []
                 for f in files:
                     for p in regex:
-                        if hidden or (f.startswith('.') and p.startswith('^\.')) or not f.startswith('.'):
+                        if hidden or not f.startswith('.'):
                             if re.search(p, f):
                                 target = tree/f-base
                                 if execute:
@@ -103,12 +112,19 @@ def filesearch(files_only, dirs_only, timestamp, hidden, path, execute, env, abo
                                     else:
                                         found_files.append(target)
                                 else:
+                                    if blank and need_newline:
+                                        echo()
+                                        need_newline = False
+                                        output = True
                                     if timestamp:
-                                        print(datetime.fromtimestamp((tree/f).stat()[8]), '   ', target, verbose=0)       # mtime
+                                        echo(datetime.fromtimestamp((tree/f).stat()[8]), '   ', target)       # mtime
                                     else:
-                                        print(target, verbose=0)       # mtime
+                                        echo(target)       # mtime
                 if found_files:
                     command(execute % ' '.join(found_files), abort)
+    if blank and output:
+        # put a blank line at the very end
+        echo()
 
 def command(command, abort_on_error):
     print('executing', command, verbose=2)
