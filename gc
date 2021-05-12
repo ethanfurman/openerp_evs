@@ -1,0 +1,265 @@
+#!/usr/local/bin/suid-python --virtualenv
+
+from __future__ import print_function
+
+from getpass import getpass
+from antipathy import Path
+from scription import Command, Execute, Main, OPTION, REQUIRED, user_ids, echo, print
+
+import os
+
+search = (
+    Path('/usr/lib/pymodules/python2.7'),
+    Path('/usr/local/bin'),
+    Path(os.environ['VIRTUAL_ENV']),
+    )
+
+def workhorse(*path):
+    """
+    yields paths with are git repos
+    """
+    if not path:
+        path = search
+    for p in path:
+        for current, dirs, files in p.walk():
+            print('looking in', current, verbose=3)
+            if '.bak/' in current or current.endswith('.bak') or 'tmp' in current:
+                dirs[:] = []
+            if '.git' in dirs or '.git' in files:
+                yield current
+
+# to be converted
+# @Command(
+#     path=('base path to search', OPTION, 'p', Path),
+#     )
+# def incoming(*path):
+#     """
+#     displays changesets in remote repo not present locally
+#     """
+#     for repo in workhorse(*path):
+#         history = Execute(('hg incoming'), timeout=30, cwd=repo)
+#         stdout = history.stdout
+#         stderr = history.stderr
+#         if stderr or stdout:
+#             echo(repo)
+#             echo('=' * 76)
+#             if not stdout.strip().endswith('no changes found'):
+#                 echo(stdout)
+#                 echo()
+#             if stderr:
+#                 echo(stderr)
+#                 echo()
+#         echo()
+#
+# @Command(
+#     date=('date to check for commits [YYYY-MM-DD]', REQUIRED),
+#     path=('base path to search', OPTION, 'p', Path),
+#     )
+# def log_date(date, *path):
+#     "displays all log entries for matching date"
+#     for repo in workhorse(*path):
+#         history = Execute(('hg', 'log', '--date', date), timeout=30, cwd=repo)
+#         stdout = history.stdout
+#         stderr = history.stderr
+#         if stderr or stdout:
+#             echo()
+#             echo(repo)
+#             echo('=' * 76)
+#             if stdout:
+#                 echo(stdout.strip())
+#             if stdout and stderr:
+#                 echo('\n--------\n')
+#             if stderr:
+#                 echo(stderr.strip())
+#         else:
+#             echo('.', end='')
+#     echo()
+#
+# @Command(
+#     path=('base path to search', OPTION, 'p', Path),
+#     )
+# def outgoing(*path):
+#     """
+#     displays changesets in local repo not present remotely
+#     """
+#     for repo in workhorse(*path):
+#         history = Execute(('hg outgoing'), timeout=30, cwd=repo)
+#         stdout = history.stdout
+#         stderr = history.stderr
+#         if stderr or stdout:
+#             echo(repo)
+#             echo('=' * 76)
+#             if not stdout.strip().endswith('no changes found'):
+#                 echo(stdout)
+#                 echo()
+#             if stderr:
+#                 echo(stderr)
+#                 echo()
+#         echo()
+#
+# @Command(
+#     path=('base path to search', OPTION, 'p', Path),
+#     )
+# def parent(*path):
+#     "displays parent of active branch"
+#     for repo in workhorse(*path):
+#         history = Execute(('hg', 'parent', '--template', '{rev}: {desc}'), timeout=30, cwd=repo)
+#         stdout = history.stdout
+#         stderr = history.stderr
+#         if stderr or stdout:
+#             echo(repo)
+#             echo('=' * 76)
+#             if stdout:
+#                 echo(stdout)
+#                 echo()
+#             if stderr:
+#                 echo(stderr)
+#                 echo()
+#         echo()
+#
+# @Command(
+#     repo=('repository to pull [default: all]', OPTION),
+#     path=('base path to search', OPTION, 'p', Path),
+#     )
+# def pull(repo, *path):
+#     '''
+#     retrieve remote change sets
+#     '''
+#
+#     password = getpass('[git] password: ')
+#     echo()
+#     target = repo
+#     for repo in workhorse(*path):
+#         if target and repo.filename != target:
+#             continue
+#         echo(repo)
+#         echo('=' * 76)
+#         history = Execute(('hg', 'pull'), timeout=900, cwd=repo, password=password, pty=True)
+#         stdout = history.stdout
+#         stderr = history.stderr
+#         returncode = history.returncode
+#         if not stdout.strip().endswith('no changes found') or returncode:
+#             echo(stdout)
+#             echo()
+#         if stderr:
+#             echo(stderr)
+#             echo()
+#         echo()
+#
+# @Command(
+#     repo=('repository to push [default: all]', OPTION),
+#     path=('base path to search', OPTION, 'p', Path),
+#     )
+# def push(repo, *path):
+#     '''
+#     send local changesets to remote repo
+#     '''
+#     password = getpass('[git] password: ')
+#     target = repo
+#     for repo in workhorse(*path):
+#         if target and repo.filename != target:
+#             continue
+#         echo(repo)
+#         echo('=' * 76)
+#         history = Execute(('hg', 'push'), timeout=30, cwd=repo, password=password, pty=True)
+#         stdout = history.stdout
+#         stderr = history.stderr
+#         returncode = history.returncode
+#         if not stdout.strip().endswith('no changes found') or returncode not in (0, 1):
+#             echo(stdout)
+#             echo()
+#         if stderr:
+#             echo(stderr)
+#             echo()
+#         echo()
+#
+# @Command(
+#     repo=('repository to update [default: all]', OPTION),
+#     path=('base path to search', OPTION, 'p', Path),
+#     )
+# def update(repo, *path):
+#     '''
+#     update active files to latest default version
+#     '''
+#     target = repo
+#     for repo in workhorse(*path):
+#         if target and repo.filename != target:
+#             continue
+#         echo(repo)
+#         echo('=' * 76)
+#         history = Execute(('hg', 'update', 'default'), timeout=30, cwd=repo)
+#         stdout = history.stdout
+#         stderr = history.stderr
+#         returncode = history.returncode
+#         stdout = stdout.strip().split('\n')
+#         last_line = ''
+#         if stdout:
+#             last_line = stdout[-1]
+#         if last_line == '0 files updated, 0 files merged, 0 files removed, 0 files unresolved' and not returncode:
+#             stdout = None
+#         if stderr or stdout:
+#             echo(repo)
+#             echo('=' * 76)
+#         if stdout:
+#             echo('\n'.join(stdout))
+#             echo()
+#         if stderr:
+#             echo(stderr)
+#             echo()
+#         parent = Execute(('hg', 'parent'), timeout=30, cwd=repo)
+#         latest = Execute(('hg', 'log', '-l1'), timeout=30, cwd=repo)
+#         if parent.stdout != latest.stdout:
+#             echo('latest version ' + latest.stdout[15:])
+#             echo('running version ' + parent.stdout[16:])
+#         echo()
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def list(*path):
+    """
+    displays all repos
+    """
+    for repo in workhorse(*path):
+        echo(repo)
+
+
+@Command(
+    path=('base path to search', OPTION, 'p', Path),
+    )
+def status(*path):
+    '''
+    display status for each repo
+    '''
+    for repo in workhorse(*path):
+        log_level = 1
+        history = Execute(('git', 'status', '--short', '--branch'), timeout=30, cwd=repo)
+        stdout = history.stdout
+        stderr = history.stderr
+        returncode = history.returncode
+        if stdout.startswith('## master...origin/master\n'):
+            stdout = stdout[26:]
+        stdout = '\n| '.join(stdout.strip().split('\n'))
+        if stdout:
+            stdout = '| ' + stdout
+        stderr = '\n! '.join(stderr.strip().split('\n'))
+        if stderr:
+            stderr = '! ' + stderr
+        if stdout or stderr or returncode:
+            log_level = 0
+        print(repo, verbose=log_level)
+        print('=' * 76, verbose=log_level)
+        print(stdout.strip(), end='', verbose=log_level)
+        if stdout:
+            print(verbose=log_level)
+            print('-' * 76, verbose=log_level)
+        print(stderr.strip(), end='', verbose=log_level)
+        if stderr:
+            print(verbose=log_level)
+            print('-' * 76, verbose=log_level)
+        print(verbose=log_level)
+        print(verbose=log_level)
+        print(verbose=log_level)
+
+# with user_ids(0, 0):
+Main()
