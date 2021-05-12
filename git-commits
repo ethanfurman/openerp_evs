@@ -15,11 +15,11 @@ REPOS = (
         '/opt/falcon/openerp',
         '/opt/falcon/openerp/addons',
         '/opt/falcon/lib/python2.7/site-packages',
-        '/home/ethan/source',
+        '/source',
         '/home/openerp/sandbox/odoo13/addons',
         )
 
-CMD = '''git log --after=%s --before=%s --pretty="format:%%cI  %%h  %%s" --name-only'''
+CMD = '''git log --after=%s --before=%s --pretty="format:%%cI  %%h  <%%an>  %%s" --name-only'''
 
 # helpers
 
@@ -61,6 +61,10 @@ def process(text):
         datetime = short_hash = desc = None
         files = []
         try:
+            date_hash, name_desc = line.split('<')
+            date, hash = date_hash.split()
+            name, desc = name_desc.split('>')
+            desc = desc.strip()
             datetime, short_hash, desc = line.split(None, 2)
             if desc.strip().lower() == 'merge':
                 continue
@@ -76,7 +80,7 @@ def process(text):
                 lines.append(line)
                 break
             files.append(line.strip())
-        yield datetime, short_hash, desc, files
+        yield name, datetime, short_hash, desc, files
 
 
 # API
@@ -84,8 +88,9 @@ def process(text):
 @Command(
         date=Spec('YYYY-MM of month to examine', type=date_from_ym),
         repo=Spec('repository to check [default: search]', force_default=None),
+        name=Spec("show NAME's commits only", OPTION),
         )
-def git_commits(date, repo):
+def git_commits(date, repo, name='Ethan Furman'):
     print('Date entered:  %r' % date)
     since = date.replace(delta_day=-1)
     until = date.replace(delta_month=+1)
@@ -102,7 +107,9 @@ def git_commits(date, repo):
             continue
         if job.stderr:
             abort(job.stderr)
-        for datetime, short_hash, desc, files in process(job.stdout):
+        for committer, datetime, short_hash, desc, files in process(job.stdout):
+            if name and committer != name:
+                continue
             date = datetime[:10]
             item = datetime, repo, short_hash, desc, '\n'.join(files)
             results.setdefault(date, {}).setdefault(repo, []).append(item)
@@ -115,7 +122,6 @@ def git_commits(date, repo):
         table.append(None)
         first_date = True
         between_repos = False
-        echo(repos.items())
         for repo, commits in sorted(repos.items(), key=lambda p: p[0]):
             commits.sort(key=lambda c: c[0])
             if between_repos:
