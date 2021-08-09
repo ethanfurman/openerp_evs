@@ -303,7 +303,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                 #    HC   |   yes  | capture
                 #    C    |   yes  | capture
                 #    C    |   no   | none
-                if heartbeat and not (capture and (result.stdout or result.stderr)):
+                if heartbeat and not (capture and output):
                     print('sending heartbeat')
                     msg = message % (
                         ','.join(email),
@@ -311,7 +311,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                         '\n\n'.join(body),
                         )
                     mail(mail_server, 25, msg)
-                if capture and (result.stdout or result.stderr):
+                if capture and output:
                     if result.stdout:
                         body.append('stdout\n======\n%s' % result.stdout)
                     if result.stderr:
