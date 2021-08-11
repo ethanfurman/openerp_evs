@@ -11,7 +11,7 @@ from scription import *
 from signal import SIGKILL
 from socket import getfqdn
 from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON
-from textwrap import dedent, wrap
+from textwrap import wrap
 from time import time
 import datetime
 import errno
@@ -29,14 +29,8 @@ SCRIPTION_ERROR_EXIT_OKAY = False
 try:
     execfile('/etc/cronaide.conf')
 except:
-    message = dedent("""\
-            To: %%s
-            From: cron_check <noreply@%s>
-            Subject: %%s
-
-            %%s""" % (getfqdn() or 'nowhere.invalid'))
-    mail_server = 'localhost'
-    notify_list = ['root@localhost']
+    MESSAGE_FROM = "cronaide <noreply@%s>" % (getfqdn or 'nowhere.invalid')
+    MESSAGE_TO = ['root@localhost']
 
 # and helpers
 
@@ -118,41 +112,15 @@ def main(log, log_file):
 
 @Command(
         email=('Who to send a test mail to.',),
-        server=('Server to use', OPTION),
         )
-def test_mail(email, server=mail_server):
+def test_mail(email):
     "send a test message to EMAIL via SERVER"
-    msg = message % (email, 'test mail', 'hope you got this! :)')
-    mail(mail_server, 25, msg)
+    send_mail(email, 'test mail', 'hope you got this! :)')
 
-
-@Command()
-def self_test():
-    print('checking /etc/cronaide.conf...', verbose=0)
-    if os.path.exists('/etc/cronaide.conf'):
-        print('  exists...', verbose=0)
-        execfile('/etc/cronaide.conf')
-        print('  parsed...', verbose=0)
-        if message.count('%%s'):
-            print('  %%s found (probably bad)', verbose=0)
-        if message.count('%s') != 3:
-            print('  %%s count is %d (should be 3: To, Subject, and Body)' % message.count('%s'), verbose=0)
-        print('  message\n ', '-'*25, '\n ', '\n  '.join(message.split('\n')), '\n ', '-'*25, verbose=0)
-        print('  mail server:', mail_server, verbose=0)
-        print('  notify list:', ', '.join(notify_list), verbose=0)
-    else:
-        if message.count('%%s'):
-            print('  %%s found (probably bad)', verbose=0)
-        if message.count('%s') != 3:
-            print('  %%s count is %d (should be 3: To, Subject, and Body)' % message.count('%s'), verbose=0)
-        print('  does not exist, using defaults:', verbose=0)
-        print('  message\n ', '-'*25, '\n ', '\n  '.join(message.split('\n')), '\n ', '-'*25, verbose=0)
-        print('  mail server:', mail_server, verbose=0)
-        print('  notify list:', ', '.join(notify_list), verbose=0)
 
 
 @Command(
-        email=Spec('Who to send job output to.', MULTI, force_default=notify_list),
+        email=Spec('Who to send job output to.', MULTI, force_default=MESSAGE_TO),
         email_subject=Spec('subject to use for email (if any)', OPTION, ('subject', 's')),
         job_timeout=Spec('allowed time for job', OPTION, abbrev='jt', type=time2seconds),
         retry_job=Spec('number of times to retry job on failure', OPTION, type=int),
@@ -235,12 +203,9 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     cls, exc, tb = sys.exc_info()
                     logger.error('%s; aborting', exc.args[0])
                     if email:
-                        msg = message % (
-                            ','.join(email),
-                            'job skipped:  %s' % (email_subject or job[0].split('/')[-1]),
-                            exc.args[0],
-                            )
-                        mail(mail_server, 25, msg)
+                        subject = email_subject or job[0].split('/')[-1]
+                        message = exc.args[0]
+                        send_mail(email, subject, message)
                         syslog(LOG_INFO, '[from %s] skipped; mail sent <%r>' % (ppid, exc.args[0]))
                     else:
                         syslog(LOG_INFO, '[from %s] skipped <%r>' % (ppid, exc.args[0]))
@@ -285,12 +250,9 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     body.append('stderr\n======\n%s' % result.stderr)
                 if email:
                     print('error encountered, sending mail')
-                    msg = message % (
-                        ','.join(email),
-                        'job failed:  %s' % (email_subject or job[0].split('/')[-1]),
-                        '\n\n'.join(body),
-                        )
-                    mail(mail_server, 25, msg)
+                    subject = 'job failed: %s' % (email_subject or job[0].split('/')[-1])
+                    message = '\n\n'.join(body)
+                    send_mail(email, subject, message)
                     syslog(LOG_INFO, '[from %s] failed; mail sent' % ppid)
                 else:
                     syslog(LOG_INFO, '[from %s] failed' % ppid)
@@ -305,24 +267,18 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                 #    C    |   no   | none
                 if heartbeat and not (capture and output):
                     print('sending heartbeat')
-                    msg = message % (
-                        ','.join(email),
-                        'job heartbeat: %s' % (email_subject or job[0].split('/')[-1]),
-                        '\n\n'.join(body),
-                        )
-                    mail(mail_server, 25, msg)
+                    subject = 'job heartbeat: %s' % (email_subject or job[0].split('/')[-1])
+                    message = '\n\n'.join(body)
+                    send_mail(email, subject, message)
                 if capture and output:
                     if result.stdout:
                         body.append('stdout\n======\n%s' % result.stdout)
                     if result.stderr:
                         body.append('stderr\n======\n%s' % result.stderr)
                     print('catch and release')
-                    msg = message % (
-                        ','.join(email),
-                        'job:  %s' % (email_subject or job[0].split('/')[-1]),
-                        '\n\n'.join(body),
-                        )
-                    mail(mail_server, 25, msg)
+                    subject = 'job: %s' % (email_subject or job[0].split('/')[-1])
+                    message = '\n\n'.join(body)
+                    send_mail(email, subject, message)
                 if msg:
                     syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
                 else:
@@ -369,7 +325,7 @@ def check_cron():
                     if email.strip():
                         addresses = email.split(',')
                     else:
-                        addresses = notify_list
+                        addresses = MESSAGE_TO
                     for addr in addresses:
                         warnings.append((addr, prog))
         warnings.sort()
@@ -377,8 +333,9 @@ def check_cron():
             prog_names = []
             for _, prog in progs:
                 prog_names.append(prog)
-            msg = message % (email, 'disabled cron jobs', '\n%s'%'\n\t'.join(prog_names))
-            mail(mail_server, 25, msg)
+            subject = 'disabled cron jobs'
+            message = '\n%s' % '\n\t'.join(prog_names)
+            send_mail(email, subject, message)
             syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
     if msg is None:
         syslog(LOG_INFO, '[from %s] succeeded' % ppid)
@@ -557,14 +514,28 @@ def is_cronaide(line):
 class BreakLoop(Exception):
     pass
 
-def emergency_mail(body):
-    error('mailing:')
-    error(message % (','.join(notify_list), ' '.join(sys.argv), body))
-    mail(
-        mail_server,
-        25,
-        message % (','.join(notify_list), ' '.join(sys.argv), body),
-        )
+def send_mail(recipients, subject, message):
+    """
+    use system mail command to send MESSAGE to RECIPIENTS
+    """
+    if isinstance(recipients, basestring):
+        recipients = [recipients]
+    sent_addresses = []
+    failed_to_send = []
+    for address in recipients:
+        # may be skipped if all eligible addresses have already been notified
+        try:
+            commandline = '/usr/bin/mail -# -r "%s" -s "%s" %s' % (MESSAGE_FROM, subject, address)
+            print(commandline)
+            job = Job(commandline, pty=True)
+            job.communicate(input=message+'\n\x04', timeout=300)
+            sent_addresses.append(address)
+        except Exception as exc:
+            error(exc)
+            failed_to_send.append(address)
+            continue
+    return sent_addresses, failed_to_send
+
 
 class Formatter(logging.Formatter):
     def format(self, record):
@@ -580,12 +551,14 @@ if __name__ == '__main__':
         if isinstance(exc, SystemExit):
             exit_code = exc.args[-1]
             if exit_code == Exit.ScriptionError and not SCRIPTION_ERROR_EXIT_OKAY:
-                emergency_mail(
+                send_mail(
+                        MESSAGE_TO,
+                        "cronaide error",
                         "error with cronaide parameters:\n\n%s\n\n%s"
                         % (
                             script_module['script_abort_message'],
                             traceback.format_exc(),
                         ))
         else:
-            emergency_mail(traceback.format_exc())
+            send_mail(MESSAGE_TO, "cronaide: exception raised", traceback.format_exc())
         raise
