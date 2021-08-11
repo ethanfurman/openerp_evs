@@ -198,7 +198,13 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                 try:
                     pid_lock = get_lock(lock_action, lock, lock_timeout)
                     print('succeeded')
+                except AlreadyLocked:
+                    # previous job still running, user does not want to kill it
+                    cls, exc, tb = sys.exc_info()
+                    print(exc)
+                    sys.exit(Exit.Success)
                 except LockError:
+                    # unable to kill previous job / unable to create file / other misc error
                     print('failed')
                     cls, exc, tb = sys.exc_info()
                     logger.error('%s; aborting', exc.args[0])
@@ -449,7 +455,7 @@ def get_lock(lock_action, lock_file, timeout):
         except AlreadyLocked:
             if timeout < 0:
                 timeout = 0
-            raise LockError(
+            raise AlreadyLocked(
                     'previous job still running after timeout:\npid: %s\nlocked: %s\ntimeout: %s'
                     % (lock.last_read_pid, lock.last_read_timestamp, seconds2time(timeout))
                     )
@@ -487,8 +493,8 @@ def get_lock(lock_action, lock_file, timeout):
                     lock.acquire(timeout=1)
                 except LockError:
                     exc = sys.exc_info()[1]
-                    lock.error('%s: second attempt failed with <%s>', lock_file, exc)
-                    raise LockError('unable to obtain lock')
+                    logger.error('%s: second attempt failed with <%s>', lock_file, exc)
+                    raise
     else:
         abort('unknown option for LOCK_ACTION: %r' % lock_action)
     return lock
