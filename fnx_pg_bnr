@@ -28,12 +28,10 @@ PSQLCMD = '%(psql)s' % pg_settings
 PGDUMPCMD = '%(pg_dump)s'
 PGDUMPALLCMD = '%(pg_dumpall)s'
 if PGHOST:
-    print('PGHOST has a truthy value of %r' % PGHOST)
     PSQLCMD += ' -h %s' % PGHOST
     PGDUMPCMD += ' -h %s' % PGHOST
     PGDUMPALLCMD += ' -h %s' % PGHOST
 if PGPORT:
-    print('PGPORT has a truthy value of %r' % PGPORT)
     PSQLCMD += ' -p %s' % PGPORT
     PGDUMPCMD += ' -p %s' % PGPORT
     PGDUMPALLCMD += ' -p %s' % PGPORT
@@ -53,7 +51,6 @@ OEDATA = oe_settings.db
 OEPSWD = oe_settings.pw
 
 TODAY = Date.today()
-LEADER = ''  # will get replaced with full path and beginning filename
 POSTGRES_IDS = tuple(pwd.getpwnam('postgres')[2:4])
 OPENERP_IDS = tuple(pwd.getpwnam('openerp')[2:4])
 ACTUAL_IDS = os.getuid(), os.getgid()
@@ -120,7 +117,7 @@ def backup(dbs, id, dst, files):
         if not dbs and not RESCUE and not dst:
             print('  backup::2', verbose=2)
             store = True
-            storage = _set_storage()
+            storage = _get_storage()
             dbs = _get_dbs_from_postgres()
         else:
             print('  backup::3', verbose=2)
@@ -228,16 +225,14 @@ def extract(date, dbs, file):
 
 
 @Command(
-        date=('date of archive to list', OPTION, 'd', Date),
-        file=('archive file to list', OPTION, 'f', Path),
+        date=Spec('date of archive to list', OPTION, 'd', Date),
+        file=Spec('archive file to list', OPTION, 'f', Path),
         )
 def list(date, file):
     """
     show all tables archived for DATE, or stored in FILE
     """
     print('  list::0', verbose=2)
-    if sum(1 for p in [date, file] if p) != 1:
-        help('at least one (and only one) of DATE or FILE may be specified')
     if not (date or file):
         print('  list::1', verbose=2)
         files = []
@@ -362,6 +357,15 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     if user_files:
         _untar(archive=user_file, root_dir='/')
 
+@Command(
+        parent=('SD[BD]BIG', ),
+        date=('YYYY-mm-dd', ),
+        type=Spec('type of backup', choices=['End','Mon','Tue','Wed','Thu','Fri','Sat','Sun']),
+        )
+def remove_excess(parent, date, type):
+    _remove_excess(Path('/%s/backups/postgres91/%s_%s' % (parent, date, type)))
+
+
 def _backup(db, filename):
     pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db)
     print('   %s' % db, end='')
@@ -463,7 +467,7 @@ def _get_dump_cmds():
     print('gdc::4', verbose=2)
     print('commands are:\n%r\n%r' % (PGDUMPCMD, PGDUMPALLCMD), verbose=3)
 
-def _set_storage():
+def _get_storage():
     """
     get the location for today's backup
     """
@@ -479,28 +483,17 @@ def _set_storage():
     # then sundays
     # then other days
     #
-    global LEADER
     locations = [STORAGE_1, STORAGE_2]
     tomorrow = TODAY.replace(delta_day=1)
     if tomorrow.day == 1:
         # month end!
-        LEADER = locations[TODAY.month/2] / TODAY.strftime('%Y-%m-%d_End')
+        return locations[TODAY.month%2] / TODAY.strftime('%Y-%m-%d_End')
     elif TODAY.isoweekday() == 0:
         # sunday!
-        LEADER = locations[TODAY.toordinal/2] / TODAY.strftime('%Y-%m-%d_Sun')
+        return locations[TODAY.toordinal()%2] / TODAY.strftime('%Y-%m-%d_Sun')
     else:
         # some other day!
-        LEADER = locations[TODAY.isoweekday()/2] / TODAY.strftime('%Y-%m-%d_%a')
-
-# def _get_pg_port():
-#     global PORT, PSQLCMD
-#     if PORT is not None:
-#         return
-#     if PGPORT:
-#         PORT = '-p %d' % int(PGPORT)
-#     else:
-#         PORT = ''
-#     PSQLCMD = (PSQLCMD % dict(port=PORT, user=PGUSER, host=PGHOST, database=PGDATA)).strip()
+        return locations[TODAY.isoweekday()%2] / TODAY.strftime('%Y-%m-%d_%a')
 
 def _list(archive):
     print('  _list::1', verbose=2)
@@ -545,7 +538,7 @@ def _psql(cmd):
             raise Exception('\n'.join(lines))
     return result.stdout
 
-def _remove_excess():
+def _remove_excess(storage):
     """
     keep one copy of each day's backup
     """
@@ -553,12 +546,13 @@ def _remove_excess():
     # and one each of either MWF or TThSa -- so whichever one we just made, we
     # can delete its older copy
     #
-    dirname = LEADER.dirname
-    type = LEADER.split('_')[1]        # type is End, Sun, Mon, Tue, Wed, Thu, Fri, or Sat
+    dirname = storage.dirname
+    type = storage.split('_')[1]        # type is End, Sun, Mon, Tue, Wed, Thu, Fri, or Sat
     found = dirname.glob('*%s*' % type)
     try:
         for f in found:
-            if not f.startswith(LEADER):
+            if not f.startswith(storage):
+                print('removing', f)
                 f.unlink()
     except:
         error(sys.exc_info())
