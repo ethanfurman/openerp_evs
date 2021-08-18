@@ -542,10 +542,11 @@ def _remove_excess(storage):
     """
     keep one copy of each day's backup
     """
-    # each storage location should have one monthly backup, one weekly backup,
+    # each backup location should have one monthly backup, one weekly backup,
     # and one each of either MWF or TThSa -- so whichever one we just made, we
     # can delete its older copy
     #
+    # storage includes the date and type portion of the filename
     dirname = storage.dirname
     type = storage.split('_')[1]        # type is End, Sun, Mon, Tue, Wed, Thu, Fri, or Sat
     found = dirname.glob('*%s*' % type)
