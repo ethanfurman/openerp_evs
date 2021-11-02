@@ -17,7 +17,7 @@ search = (
 
 def workhorse(*path):
     """
-    yields paths with are git repos
+    yields paths which are git repos
     """
     if not path:
         path = search
