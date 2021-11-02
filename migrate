@@ -12,6 +12,7 @@ from antipathy import Path
 from base64 import b64encode, b64decode
 from openerplib import get_connection, AttrDict, Many2One, Fault
 from openerplib import dates
+from zlib import crc32
 from scription import *
 
 virtual_env = Path(os.environ['VIRTUAL_ENV'])
@@ -137,13 +138,10 @@ def export(module, path, clean, name, field_type):
     """
     export data from current virtualenv's OpenERP/Odoo installation
     - works on one specified module at a time
-    - creates globally unique ir.model.data names for each record
-      in each table
-    - saves non-binary/non-x2x data into a csv file with matching
-      module.model name
+    - creates globally unique ir.model.data names for each record in each table
+    - saves non-binary/non-x2x data into a csv file with matching module.model name
     - saves binary date to separate, individual files with imd name
-    - saves x2x fields into separate file (one per table) with relational
-      links using ir.model.data names
+    - saves x2x fields into separate file (one per table) with relational links using ir.model.data names
     - 0th row of csv is exported field names
     """
     if 'all' in field_type:
@@ -170,7 +168,7 @@ def export(module, path, clean, name, field_type):
             if current == path:
                 files = [f for f in files if f != 'migrate.ini']
             for f in files:
-                print('unlinking', current/f, verbose=3)
+                print('  unlinking', current/f, verbose=3)
                 current.unlink(f)
     #
     if not (name or field_type):
@@ -254,9 +252,9 @@ def connect_oe():
 
 def assign_export_names(section, records):
     """
-    OpenERP/Odoo requires ir.model.data names to be globally unique, but
-    allows multiple names per record; we need to have only one name per
-    record (at least in the `oev7` namespace).
+    OpenERP/Odoo requires ir.model.data module:names to be globally unique, but
+    allows multiple module:names per record; we use the fis module:name if it
+    exists, and will otherwise create an oev7:name for the record.
     """
     model = section.model_name
     base = (section.new_model_name or model).replace('.','_')
@@ -265,22 +263,22 @@ def assign_export_names(section, records):
     preexisting_names = {}
     preexisting_ids = {}
     for rec in ir_model_data.read(
-            [('module','=like','oev7%')],
-            fields=['id','module','model','name','res_id'],
+            ['|',('module','=','fis'),('module','=','oev7')],
+            fields=['id','module','name','model','res_id'],
         ):
-        preexisting_names[rec.name] = rec
+        preexisting_names[(rec.module, rec.name)] = rec
         preexisting_ids[rec.model, rec.res_id] = rec
     for rec in records:
         name = '%s_%06d' % (base, rec.id)
         if preexisting_ids.get((model, rec.id)):
             continue
-        elif preexisting_names.get(name):
+        elif preexisting_names.get(('oev7',name)):
             pre = preexisting_names[name]
-            abort('%s is already being used by %s->%s.%d' % (name, pre.module, pre.model, pre.res_id))
+            abort('%s is already being used: oev7:%s -> (%s,%d)' % (name, pre.module, pre.model, pre.res_id))
         new_rec = AttrDict(module='oev7', model=model, name=name, res_id=rec.id)
-        new_id = ir_model_data.create(new_rec)
-        preexisting_names[name] = new_rec
-        preexisting_ids[model, new_id] = new_rec
+        ir_model_data.create(new_rec)
+        preexisting_names[('oev7',name)] = new_rec
+        preexisting_ids[model, rec.id] = new_rec
 
 def export_attachment_fields(module, path, section, data):
     if not section.attachments:
@@ -289,36 +287,32 @@ def export_attachment_fields(module, path, section, data):
         return
     model = section.model_name
     model_name = (section.new_model_name or model).replace('.','_')
-    path /= model_name
-    if not path.exists():
-        path.mkdir()
-    file_template = '%(imd_name)s_%(field_name)s_%(disk_name)s'
-    print('    ==>', path, verbose=2)
+    branch = path / model_name
+    if not branch.exists():
+        branch.mkdir()
+    file_template = '%(imd_name)s+%(disk_name)s'
+    print('    ==>', branch, verbose=2)
     for rec in data:
         link = Link(model, rec.id)
         for field_name in section.attachments:
+            leaf = branch / field_name
+            if not leaf.exists():
+                leaf.mkdir()
             attachments = rec[field_name]
             for attach in attachments:
                 # attachments is a list of Many2one records
                 attach = ir_attachment.read(attach.id, ['datas_fname', 'datas',])
                 # check for duplicate file name
-                file_name = file_template % {
+                new_name = (file_template % {
                         'imd_name':link.name,
-                        'field_name':field_name,
                         'disk_name':attach.datas_fname,
-                        }
-                file_name = file_name.replace(' ','%20').replace('/','%2f')
-                if path.exists(file_name):
-                    file_name += '1'
-                    if path.exists(file_name):
-                        file_name[-1] = '2'
-                        if path.exists(file_name):
-                            file_name[-1] = '3'
-                            if path.exists(file_name):
-                                error('too many copies of %r, skipping' % file_name[-1])
-                                continue
-                attachment = b64encode(attach.datas or bytes())
-                with open(path/file_name, 'wb') as f:
+                        }).replace(' ','_')
+                if leaf.exists(new_name):
+                    error('%r already exists, skipping' % (leaf/new_name - branch))
+                    continue
+                # attachment = b64decode(attach.datas or bytes())
+                attachment = attach.datas or bytes()
+                with open(leaf/new_name, 'wb') as f:
                     f.write(attachment)
 
 def export_binary_fields(module, path, section, data):
@@ -341,7 +335,7 @@ def export_binary_fields(module, path, section, data):
         for field_name in section.binaries:
             binary = rec[field_name]
             if binary:
-                binary = b64encode(binary)
+                # binary = b64encode(binary)
                 file_name = file_template % {'imd_name':link.name, 'field_name':field_name}
                 with open(file_name, 'wb') as f:
                     f.write(binary)
@@ -406,6 +400,7 @@ class dualmethod(object):
         return lambda *args, **kwds: descriptor.func(cls, instance, *args, **kwds)
 
 
+
 class Link(object):
     "represents a link to a model:record"
 
@@ -414,9 +409,9 @@ class Link(object):
 
     __slots__ = 'name', 'model', 'id'
 
-    def __new__(cls, name=None, model=None, id=None):
+    def __new__(cls, name=None, model=None, id=None, module=None):
         """
-        Link(name) | Link(model, id) | Link(name, model, id)
+        Link(name) | Link(model, id) | Link(name, model, id, module)
 
         model = dotted model name
         id = numeric id of record being linked to
@@ -424,53 +419,63 @@ class Link(object):
 
         NB: parameters are positional only [DO NOT pass by keyword]
         """
-        print('received:', name, model, id, verbose=3)
-        args = (name, model, id)
+        print('received:', name, model, id, module, verbose=3)
+        args = (name, model, id, module)
         passed = sum(1 for arg in args if arg)
-        if passed == 0:
-            raise ValueError('invalid link parameters')
+        if passed in (0, 3):
+            raise ValueError('Link called incorrectly: Link%s' % (args, ))
         elif passed == 1:
-            name = name
-            model = None
-            id = 0
+            if not name:
+                raise ValueError("Link called incorrectly: Link%s" % (args, ))
         elif passed == 2:
             id = model
             model = name
             name = None
-        print('looking for:', name, model, id, verbose=3)
-        if name:
-            print('checking by name', verbose=3)
-            link = cls.links_by_name.get(name)
-            if link is not None:
-                return link
-        if model and id:
-            print('checking by model/id', verbose=3)
-            link = cls.links_by_model_id.get((model, id))
-            if link is not None:
-                # only one oev7 name allowed per record
-                if name is not None:
-                    raise DuplicateError('%s:%d is already using %r (attempted to assign %r)'
-                            % (model, id, link.name, name))
-                return link
-        # link does not exist
-        # make new link object and, if needed, create new ir.model.data record
-        if passed == 3:
-            # we have all we need
-            pass
-        elif passed == 2:
             if not (model and id):
                 raise ValueError("Link called incorrectly: Link%s" % (args, ))
-            # create name and ir.model.data record
+        print('  looking for:', module, name, model, id, verbose=3)
+        if name:
+            print('  checking by name: ', verbose=3, end='')
+            link = cls.links_by_name.get(('fis', name)) or cls.links_by_name.get(('oev7', name))
+            if link is not None:
+                print(' Link(%r)' % (link.name, ), verbose=3)
+                return link
+            print('not found', verbose=3)
+        if model and id:
+            print('  checking by model/id: ', verbose=3, end='')
+            link = cls.links_by_model_id.get((model, id))
+            if link is not None:
+                if link.name:
+                    print(' Link(%r)' % (link.name, ), verbose=3)
+                else:
+                    print(' Link(%r, %r)' % (link.model, link.id), verbose=3)
+                return link
+            print('not found', verbose=3)
+        # link does not exist
+        # make new link object and, if needed, create new ir.model.data record
+        if passed == 4:
+            # ir.model.data record already exists, just create the Link
+            pass
+        elif passed == 2:
+            # create ir.model.data record with generated name and in the oev7 module
+            module = 'oev7'
             name = '%s_%06d' % (model.replace('.','_'), id)
-            print('creating %s with %r, %r' % (name, model, id), verbose=4)
-            ir_model_data.create(dict(module='oev7', name=name, model=model, res_id=id))
+            print('  creating %s.%s with %r, %r' % (module, name, model, id), verbose=4)
+            ir_model_data.create(dict(module=module, name=name, model=model, res_id=id))
         elif passed == 1:
-            if not name:
-                raise ValueError("Link called incorrectly: Link%s" % (args, ))
             # check for existing ir.model.data record
-            records = ir_model_data.read([('name','=',name)])
+            print('  final check for %r: ' % name, end='', verbose=3)
+            records = ir_model_data.read(['|',('module','=','fis'),('module','=','oev7'),('name','=',name)])
             if not records:
-                raise ValueError('no ir.model.data record found for %r' % name)
+                print(verbose=3)
+                raise ValueErrer('no ir.model.data record found for %r' % name)
+            elif len(records) != 1:
+                print(verbose=3)
+                raise ValueErrer('too many ir.model.data records found for %r:\n  %s' % (
+                        name,
+                        '\n  '.join(rec for rec in records),
+                        ))
+            print('found', verbose=3)
             rec = records[0]
             model = rec.model
             id = rec.res_id
@@ -478,7 +483,8 @@ class Link(object):
         link.name = name
         link.model = model
         link.id = id
-        cls.links_by_name[name] = link
+        print('  link created: Link(%r)' % (link.name, ), verbose=3)
+        cls.links_by_name[module, name] = link
         cls.links_by_model_id[model, id] = link
         return link
 
@@ -492,8 +498,8 @@ class Link(object):
 
     @classmethod
     def prime(cls):
-        for rec in ir_model_data.read([('module','=','oev7')]):
-            Link(rec.name, rec.model, rec.res_id)
+        for rec in ir_model_data.read(['|',('module','=','fis'),('module','=','oev7')]):
+            Link(rec.name, rec.model, rec.res_id, rec.module)
         print('%d links found' % len(cls.links_by_name), verbose=4)
 
 class csv(object):
@@ -533,7 +539,11 @@ class csv(object):
     def open(cls, self, filename=None, mode=None, header=None):
         if self is None:
             self = cls(filename, mode, header)
-        filename, mode, header = self.filename, self.mode, self.header
+        filename = filename or self.filename
+        mode = mode or self.mode
+        header = header or self.header
+        if not filename:
+            raise ValueError('csv: no filename given')
         if self.file is not None and not self.file.closed:
             raise Exception('%r is already open' % (self.file.name, ))
         self.file = codecs.open(filename, mode, encoding='utf-8')
@@ -699,6 +709,22 @@ def get_imd_data(module):
                     fields=['name','model'],
                     ))
     return module_tables
+
+def get_next_filename(name, limit=99):
+    """
+    adds numbers to file name until succesfully opened; stops at limit
+    """
+    file = Path(name)
+    for i in range(1, limit+1):
+        try:
+            target = file.parent / file.base + '.%02d' % i + file.ext
+            fh = os.open(target, os.O_CREAT | os.O_EXCL)
+            os.close(fh)
+            return target
+        except OSError:
+            pass
+    else:
+        raise IOError('unable to create file for %s' % name)
 
 Run()
 
