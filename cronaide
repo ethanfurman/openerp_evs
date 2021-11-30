@@ -5,6 +5,7 @@ from __future__ import print_function
 
 from antipathy import Path
 from antipathy.path import uPath
+from datetime import date
 from itertools import groupby
 from pandaemonium import PidLockFile, LockError, AlreadyLocked, logger as pandaemonium_logger
 from scription import *
@@ -24,6 +25,7 @@ import traceback
 import sys
 
 SCRIPTION_ERROR_EXIT_OKAY = False
+TODAY = date.today()
 
 # load configuration file
 try:
@@ -528,6 +530,7 @@ def send_mail(recipients, subject, message):
         recipients = [recipients]
     sent_addresses = []
     failed_to_send = []
+    subject = TODAY.strftime('[%Y-%m-%d] %%s') % (subject, )
     for address in recipients:
         # may be skipped if all eligible addresses have already been notified
         try:
