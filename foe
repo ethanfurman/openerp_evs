@@ -9,7 +9,7 @@ from datetime import timedelta
 from dbf import Date
 from scription import *
 from VSS.utils import xrange
-import os
+import os, sys
 
 @Script()
 def main():
@@ -20,122 +20,91 @@ def main():
 def info():
     "show network and local settings"
     if config.network.role == 'master':
-        daily_src = config.postgres.daily
-        monthly_src = config.postgres.monthly
-        daily_dst = config.network.daily_backup
-        monthly_dst = config.network.monthly_backup
+        storage1_src = config.postgres.storage1
+        storage2_src = config.postgres.storage2
+        storage1_dst = config.network.storage1
+        storage2_dst = config.network.storage2
         host = config.network.slave
         echo('\nbackups will be copied from\n  %s\nto\n  %s:%s\n\nand from\n  %s\nto\n  %s:%s' % (
-            daily_src, host, daily_dst,
-            monthly_src, host, monthly_dst,
+            storage1_src, host, storage1_dst,
+            storage2_src, host, storage2_dst,
             ))
     elif config.network.role == 'slave':
-        daily_src = config.network.daily_backup
-        monthly_src = config.network.monthly_backup
-        daily_dst = config.postgres.daily
-        monthly_dst = config.postgres.monthly
+        storage1_src = config.network.storage1
+        storage2_src = config.network.storage2
+        storage1_dst = config.postgres.storage1
+        storage2_dst = config.postgres.storage2
         host = config.network.master
         echo('\nbackups will be copied from\n  %s:%s\nto\n  %s\n\nand from\n  %s:%s\nto\n  %s' % (
-            host, daily_src, daily_dst,
-            host, monthly_src, monthly_dst,
+            host, storage1_src, storage1_dst,
+            host, storage2_src, storage2_dst,
             ))
-        echo('\nWill keep %d local and %d monthly backups' % (config.postgres.daily_limit, config.postgres.monthly_limit))
-    if config.network.get('fis_data_host') is None:
+    if OrmSection.get(config.network, 'fis_data_host') is None:
         echo('\n\ncanonical fis data host not configured')
     host = config.network.fis_data_host
     path = config.network.fis_data_path
     pre = config.network.fis_data_prefix
     local_path = config.network.fis_data_local_path
     echo('\nFIS %r data files will be copied from\n  %s:%s\nto\n  %s' % (pre, host, path, local_path))
-    echo('\nCurrent daily backups:\n  %s' % '\n  '.join(Path(config.postgres.daily).listdir()))
-    echo('\nCurrent monthly backups:\n  %s' % '\n  '.join(Path(config.postgres.monthly).listdir()))
+    echo('\nCurrent storage1 backups:\n  %s' % '\n  '.join(Path(config.postgres.storage1).listdir()))
+    echo('\nCurrent storage2 backups:\n  %s' % '\n  '.join(Path(config.postgres.storage2).listdir()))
 
 @Command(
         remove=('remove excess backups', FLAG),
+        latest=('only get last backup', FLAG),
         )
-def backups(remove):
+def backups(remove, latest):
     """
     copy backup from master to slave
 
     local files live in:
-    - postgres.daily
-    - postgres.monthly
+    - postgres.storage1
+    - postgres.storage2
     network files live in:
-    - network.daily_backup
-    - network.monthly_backup
+    - network.storage1
+    - network.storage2
     and the operation (send vs receive) is determined by:
     - network.role
     """
     if config.network.role == 'master':
-        daily_src = config.postgres.daily
-        monthly_src = config.postgres.monthly
-        daily_dst = config.network.daily_backup
-        monthly_dst = config.network.monthly_backup
+        storage1_src = config.postgres.storage1
+        storage2_src = config.postgres.storage2
+        storage1_dst = config.network.storage1
+        storage2_dst = config.network.storage2
         host = config.network.slave
         to_remote = True
         print('moving backups from\n  %s\nto\n  %s:%s\nand from\n  %s\nto\n  %s:%s' % (
-            daily_src, host, daily_dst,
-            monthly_src, host, monthly_dst,
+            storage1_src, host, storage1_dst,
+            storage2_src, host, storage2_dst,
             ))
-        daily_files = [
-            p
-            for d in xrange(
-                Date.today().replace(delta_day=-1),
-                step=timedelta(-1),
-                count=config.postgres.daily_limit)
-            for p in Path.glob(daily_src/d.strftime('%Y-%m-%d') + '_*')
-            ]
-        # below Date dance ensures we are in the previous month if today is the first
-        monthly_files = [
-            p
-            for d in xrange(
-                Date.today().replace(delta_day=-1).replace(day=1),
-                step=lambda initial, i, prev_value: prev_value.replace(delta_month=-1),
-                count=config.postgres.monthly_limit)
-            for p in Path.glob(monthly_src/d.strftime('%Y-%m-%d') + '_*')
-            ]
     elif config.network.role == 'slave':
-        daily_src = config.network.daily_backup
-        monthly_src = config.network.monthly_backup
-        daily_dst = config.postgres.daily
-        monthly_dst = config.postgres.monthly
+        storage1_src = config.network.storage1
+        storage2_src = config.network.storage2
+        storage1_dst = config.postgres.storage1
+        storage2_dst = config.postgres.storage2
         host = config.network.master
         to_remote = False
-        print('moving backups from\n  %s:%s\nto\n  %s\nand from\n  %s:%s\nto\n  %s' % (
-            host, daily_src, daily_dst,
-            host, monthly_src, monthly_dst,
+        if latest:
+            storage1_src /= '*pg91*'
+            storage2_src /= '*pg91*'
+        print('copying backups from\n  %s:%s\nto\n  %s\nand from\n  %s:%s\nto\n  %s' % (
+            host, storage1_src, storage1_dst,
+            host, storage2_src, storage2_dst,
             ))
-        daily_files = [
-            p
-            for d in xrange(
-                Date.today().replace(delta_day=-1),
-                step=timedelta(-1),
-                count=config.postgres.daily_limit)
-            for p in (Path(daily_src/d.strftime('%Y-%m-%d') + '_*'), )
-            ]
-        # below Date dance ensures we are in the previous month if today is the first
-        monthly_files = [
-            p
-            for d in xrange(
-                Date.today().replace(delta_day=-1).replace(day=1),
-                step=lambda initial, i, prev_value: prev_value.replace(delta_month=-1),
-                count=config.postgres.monthly_limit)
-            for p in (Path(monthly_src/d.strftime('%Y-%m-%d') + '_*'), )
-            ]
     else:
         help('invalid network role: %r' % config.network.role)
     output = []
-    command, job = rsync(daily_files, host, daily_dst, to_remote)
+    command, job = rsync(storage1_src, host, storage1_dst, to_remote)
     if job.returncode or job.stderr:
         output.extend(['*' * 50, command, '-' * 50, job.stdout, '-' * 50, job.stderr])
-    command, job = rsync(monthly_files, host, monthly_dst, to_remote)
+    command, job = rsync(storage2_src, host, storage2_dst, to_remote)
     if job.returncode or job.stderr:
         output.extend(['*' * 50, command, '-' * 50, job.stdout, '-' * 50, job.stderr])
     if output:
         output.append('*' * 50)
     if config.network.role == 'slave' and remove:
-        _remove_excess(config.postgres.daily, config.postgres.daily_limit)
-        _remove_excess(config.postgres.monthly, config.postgres.monthly_limit)
+        _remove_excess(config.postgres.storage1, config.postgres.daily_limit)
+        _remove_excess(config.postgres.storage2, config.postgres.monthly_limit)
     if output:
         error('\n'.join(output))
         return Exit.Unknown
@@ -150,7 +119,7 @@ def fis(complete):
 
     copy from network.fis_data_host/path to network.fis_data_local_path
     """
-    if config.network.get('fis_data_host') is None:
+    if OrmSection.get(config.network,'fis_data_host') is None:
         abort('canonical fis data host not configured')
     host = config.network.fis_data_host
     path = config.network.fis_data_path
@@ -167,15 +136,20 @@ def fis(complete):
             '{path}/{pre}{f} {path}/{pre}{f}M {path}/{pre}{f}.txt'.format(path=path, pre=pre, f=f)
             for f in config.network.fis_openerp_files.split()
             ]).split()
+        files.extend(
+            ' '.join([
+            '{path}/{pre}{f}'.format(path=path, pre=pre, f=f)
+            for f in config.network.fis_openerp_extra_files.split()
+            ]).split()
+            )
         # XXX - dirty hack to get weird file
         if pre == 'O':
             files.append('{path}/COPERM'.format(path=path))
     output = []
     try:
         print('calling rsync')
-        command, job = rsync(files, host, local_path)
+        command, job = rsync(' :'.join(files), host, local_path)
     except RSyncFailure as exc:
-        error('\n-----------------\n'.join([exc.commandline, exc.job.stdout, exc.job.stderr]))
         raise SystemExit(exc.job.returncode)
     output.extend([command, job.stdout, job.stderr])
     command = 'chown -R openerp: %s' % (local_path, )
@@ -216,14 +190,16 @@ def rsync(files, host, dst_path, to_remote=False):
     else:
         command = (
                 'rsync -a root@%s:%s %s/'
-                % (host, ' :'.join(files), dst_path)
+                % (host, files, dst_path)
                 )
-    output = []
     if script_verbosity:
         command += ' -v'
-    print(command, border='box', verbose=1)
-    job = Execute(command, pty=True, password=config.network.pw, password_timeout=300, timeout=3600*5)
-    output.extend([command, job.stderr, job.stdout])
+    print(command)
+    try:
+        job = Execute(command, pty=True, password=config.network.pw, password_timeout=300, timeout=3600*5)
+    except ExecuteError:
+        cls, exc, tb = sys.exc_info()
+        raise RSyncFailure(job=exc.process, commandline=command)
     return command, job
 
 def _remove_excess(storage, limit):

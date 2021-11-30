@@ -200,6 +200,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     print('succeeded')
                 except AlreadyLocked:
                     # previous job still running, user does not want to kill it
+                    cls, exc, tb = sys.exc_info()
                     syslog(LOG_INFO, '[from %s] skipped; previous job still running' % (ppid, exc.args[0]))
                     sys.exit(Exit.Success)
                 except LockError:
