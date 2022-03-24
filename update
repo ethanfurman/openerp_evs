@@ -1,4 +1,4 @@
-#!/usr/local/bin/suid-python --py3
+#!/usr/local/bin/suid-python --py3--virtualenv
 from __future__ import print_function
 
 from antipathy import Path
@@ -6,8 +6,11 @@ from xaml import Xaml
 from scription import *
 
 import grp
+import os
 import pwd
 import sys
+
+virtual_env = os.environ['VIRTUAL_ENV']
 
 self = Path(sys.argv[0])
 mode = self.stat().st_mode
@@ -57,7 +60,7 @@ def install_to_opt_bin(repo):
         if repo.exists(install):
             break
         else:
-            print('no such file')
+            print('%s: no such file' % install)
             return
     lines = [l.strip() for l in open(repo/install).readlines() if l.strip()]
     opt_bin = Path('/opt/bin')
@@ -89,6 +92,7 @@ def install_to_opt_bin(repo):
             src, dst = names
             src = repo/src
             dst = opt_bin*dst
+            dst.replace('$virtualenv',virtual_env)
             if not dst.dirname.exists():
                 dst.dirname.mkdir()
             echo('  %s --> %s' % (names[0], dst))
@@ -119,7 +123,6 @@ def perms(root, files, dirs):
     d_perms = dirs
     max_cmd_len = int(Execute('/usr/bin/getconf ARG_MAX').stdout.strip() - 30)
     file_names = []
-    segments = []
     dir_names = []
     for current, dirs, files in Path(root).walk():
         dir_names.extend([current/d for d in dirs])
@@ -129,18 +132,18 @@ def perms(root, files, dirs):
         # make sure we don't exceed the commond line length
         files = ' '.join(file_names[:segment_size])
         if len(files) >= max_cmd_len:
-            sement_size //= 2
+            segment_size //= 2
             continue
-        files_names = file_names[segment_size:]
-        Execute('/bin/chmod %s %s' % (f_perms, files))
+        file_names = file_names[segment_size:]
+        Execute('/bin/chmod %s %s' % (f_perms, file_names))
     while dir_names:
         # make sure we don't exceed the commond line length
         dirs = ' '.join(dir_names[:segment_size])
         if len(dirs) >= max_cmd_len:
-            sement_size //= 2
+            segment_size //= 2
             continue
         dir_names = dir_names[segment_size:]
-        Execute('/bin/chmod %s %s' % (f_perms, dirs))
+        Execute('/bin/chmod %s %s' % (d_perms, dirs))
 
 
 @Command(
