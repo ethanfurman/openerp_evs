@@ -46,8 +46,11 @@ def info():
     pre = config.network.fis_data_prefix
     local_path = config.network.fis_data_local_path
     echo('\nFIS %r data files will be copied from\n  %s:%s\nto\n  %s' % (pre, host, path, local_path))
-    echo('\nCurrent storage1 backups:\n  %s' % '\n  '.join(Path(config.postgres.storage1).listdir()))
-    echo('\nCurrent storage2 backups:\n  %s' % '\n  '.join(Path(config.postgres.storage2).listdir()))
+    if config.postgres.storage1 == config.postgres.storage2:
+        echo('\nCurrent backups:\n  %s' % '\n  '.join(sorted(Path(config.postgres.storage1).listdir())))
+    else:
+        echo('\nCurrent storage1 backups:\n  %s' % '\n  '.join(sorted(Path(config.postgres.storage1).listdir())))
+        echo('\nCurrent storage2 backups:\n  %s' % '\n  '.join(sorted(Path(config.postgres.storage2).listdir())))
 
 @Command(
         remove=('remove excess backups', FLAG),
@@ -97,11 +100,12 @@ def backups(remove, latest):
     command, job = rsync(storage1_src, host, storage1_dst, to_remote)
     if job.returncode or job.stderr:
         output.extend(['*' * 50, command, '-' * 50, job.stdout, '-' * 50, job.stderr])
-    command, job = rsync(storage2_src, host, storage2_dst, to_remote)
-    if job.returncode or job.stderr:
-        output.extend(['*' * 50, command, '-' * 50, job.stdout, '-' * 50, job.stderr])
-    if output:
-        output.append('*' * 50)
+    if storage2_src:
+        command, job = rsync(storage2_src, host, storage2_dst, to_remote)
+        if job.returncode or job.stderr:
+            output.extend(['*' * 50, command, '-' * 50, job.stdout, '-' * 50, job.stderr])
+        if output:
+            output.append('*' * 50)
     if config.network.role == 'slave' and remove:
         _remove_excess(config.postgres.storage1, config.postgres.daily_limit)
         _remove_excess(config.postgres.storage2, config.postgres.monthly_limit)
@@ -197,6 +201,8 @@ def rsync(files, host, dst_path, to_remote=False):
     print(command)
     try:
         job = Execute(command, pty=True, password=config.network.pw, password_timeout=300, timeout=3600*5)
+        print(job.stdout)
+        print(job.stderr)
     except ExecuteError:
         cls, exc, tb = sys.exc_info()
         raise RSyncFailure(job=exc.process, commandline=command)
