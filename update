@@ -1,16 +1,19 @@
-#!/usr/local/bin/suid-python --py3--virtualenv
+#!/usr/local/bin/suid-python --py3
 from __future__ import print_function
 
-from antipathy import Path
-from xaml import Xaml
-from scription import *
-
 import grp
-import os
 import pwd
 import sys
+import os
 
-virtual_env = os.environ['VIRTUAL_ENV']
+try:
+    virtual_env = os.environ['VIRTUAL_ENV']
+    from scription import *
+    from antipathy import Path
+    from xaml import Xaml
+except (KeyError, ImportError):
+    print('\n==--> VIRTUAL_ENV must be set\n')
+    raise
 
 self = Path(sys.argv[0])
 mode = self.stat().st_mode
@@ -92,7 +95,7 @@ def install_to_opt_bin(repo):
             src, dst = names
             src = repo/src
             dst = opt_bin*dst
-            dst.replace('$virtualenv',virtual_env)
+            dst = dst.replace('$virtualenv',virtual_env)
             if not dst.dirname.exists():
                 dst.dirname.mkdir()
             echo('  %s --> %s' % (names[0], dst))
