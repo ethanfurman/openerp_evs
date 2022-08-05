@@ -231,6 +231,8 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
             try:
                 print('communicating with job')
                 result.communicate(timeout=job_timeout)
+                print(result.stdout, verbose=2)
+                print(result.stderr, verbose=2)
             except TimeoutError:
                 print('job timed out')
                 pass
@@ -492,6 +494,7 @@ def get_lock(lock_action, lock_file, timeout):
                         raise LockError('error killing previous job')
                 try:
                     logger.debug('%s: second acquire attempt', lock_file)
+                    lock.break_lock()
                     lock.acquire(timeout=1)
                 except LockError:
                     exc = sys.exc_info()[1]
