@@ -307,7 +307,6 @@ def get_links(G, table, records, depth=0, limit=None, stored=None, tables=(), re
                         stored[current_node_id, sub_node_id, field] = True
 
 
-
 def build_table_description(table):
     oe_tables[table._name] = table
     lines = [table._name, '====================']
