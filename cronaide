@@ -11,7 +11,7 @@ from pandaemonium import PidLockFile, LockError, AlreadyLocked, logger as pandae
 from scription import *
 from signal import SIGKILL
 from socket import getfqdn
-from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON
+from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON, LOG_ERR
 from textwrap import wrap
 from time import time
 import datetime
@@ -31,7 +31,7 @@ TODAY = date.today()
 try:
     execfile('/etc/cronaide.conf')
 except:
-    MESSAGE_FROM = "cronaide <noreply@%s>" % (getfqdn or 'nowhere.invalid')
+    MESSAGE_FROM = "cronaide <noreply@%s>" % (getfqdn() or 'nowhere.invalid')
     MESSAGE_TO = ['root@localhost']
 
 # and helpers
@@ -541,7 +541,11 @@ def send_mail(recipients, subject, message):
             print(commandline)
             job = Job(commandline, pty=True)
             job.communicate(input=message+'\n\x04', timeout=300)
-            sent_addresses.append(address)
+            if job.stderr:
+                failed_to_send.append(address)
+                syslog(LOG_ERR, '[from %s] failed to send email: %r' % (os.getppid(), job.stderr))
+            else:
+                sent_addresses.append(address)
         except Exception as exc:
             error(exc)
             failed_to_send.append(address)
