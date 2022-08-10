@@ -5,7 +5,6 @@ from __future__ import print_function
 
 from antipathy import Path
 from antipathy.path import uPath
-from datetime import date
 from itertools import groupby
 from pandaemonium import PidLockFile, LockError, AlreadyLocked, logger as pandaemonium_logger
 from scription import *
@@ -25,7 +24,8 @@ import traceback
 import sys
 
 SCRIPTION_ERROR_EXIT_OKAY = False
-TODAY = date.today()
+TODAY = datetime.date.today()
+NOW = datetime.datetime.now()
 
 # load configuration file
 try:
@@ -89,11 +89,15 @@ def seconds2time(seconds):
 # API
 
 @Script(
-        log=Spec('logging level to use', OPTION, abbrev=None, force_default='INFO', type=u.upper),
+        log=Spec('logging level to use', OPTION, abbrev=None, force_default='info', type=u.upper),
         log_file=Spec('file to log to', OPTION, abbrev=None, force_default='/var/log/cronaide.log'),
+        result_dir=Spec('directory to save job output to', OPTION, abbrev=None, force_default='/var/log/cronaide', type=Path),
+        result_count=Spec('how many files to keep', OPTION, abbrev=None, force_default=45),
         )
-def main(log, log_file):
-    global logger, main_logger
+def main(log, log_file, result_dir, result_count):
+    global logger, main_logger, out_dir, out_count
+    out_dir = result_dir
+    out_count = result_count
     if log and os.getuid() == 0:
         log_level = getattr(logging, log)
         main_logger = logging.getLogger()
@@ -190,6 +194,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
     openlog('AIDE', LOG_PID, LOG_CRON)
     try:
         pid_lock = None
+        result = None
         while "trying to run job":
             print('preparing to run job')
             failed = False
@@ -210,14 +215,16 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     print('failed')
                     cls, exc, tb = sys.exc_info()
                     logger.error('%s; aborting', exc.args[0])
+                    message = exc.args[0]
                     if email:
                         subject = email_subject or job[0].split('/')[-1]
-                        message = exc.args[0]
                         send_mail(email, subject, message)
                         syslog(LOG_INFO, '[from %s] skipped; mail sent <%r>' % (ppid, exc.args[0]))
                     else:
                         syslog(LOG_INFO, '[from %s] skipped <%r>' % (ppid, exc.args[0]))
                         error(exc.args[0])
+                    if passthrough:
+                        echo(message)
                     sys.exit(Exit.TempFail)
                 else:
                     logger.debug('lock obtained')
@@ -229,13 +236,17 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                 pid_lock.seal(result.pid)
                 logger.debug('lock sealed for PID: %d', result.pid)
             try:
+                failed = True  # reset if job completes successfully
                 print('communicating with job')
                 result.communicate(timeout=job_timeout)
                 print(result.stdout, verbose=2)
                 print(result.stderr, verbose=2)
+                failed = False
             except TimeoutError:
                 print('job timed out')
                 pass
+            except ExecuteError as exc:
+                abort(exc)
             finally:
                 print('closing job')
                 result.close()
@@ -244,13 +255,14 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     pid_lock.release()
             stop = time()
             elapsed = stop - start
-            msg = None
+            message = None
             body = [
                     'job:  %s' % ' '.join(job),
                     'pid:  %s' % result.pid,
                     'return code: %s' % result.returncode,
                     'time to run: approximately %s' % seconds2time(elapsed),
                     ]
+            save_result_to_file(result, body)
             output = result.stdout + result.stderr
             if (check_stdout and ('ERROR' in output or 'Traceback' in output)) or result.returncode or (fail_on_stderr and result.stderr):
                 failed = True
@@ -289,16 +301,10 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                     subject = 'job: %s' % (email_subject or job[0].split('/')[-1])
                     message = '\n\n'.join(body)
                     send_mail(email, subject, message)
-                if msg:
+                if message:
                     syslog(LOG_INFO, '[from %s] succeeded; mail sent' % ppid)
                 else:
                     syslog(LOG_INFO, '[from %s] succeeded' % ppid)
-            if passthrough or (failed and not email):
-                print('relaying job output')
-                if result.stdout:
-                    print(result.stdout, verbose=0, end='')
-                if result.stderr:
-                    print(result.stderr, end='', file=sys.stderr)
             if failed:
                 if retry_job:
                     logger.debug('job failed, retrying (attempts left: %d)', retry_job)
@@ -310,6 +316,14 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                 logger.info('job finished')
                 break
     finally:
+        if pid_lock:
+            pid_lock.release()
+        if result and (passthrough and script_verbosity < 2) or (failed and not email):
+            print('relaying job output')
+            if result.stdout:
+                echo(result.stdout, verbose=0, end='')
+            if result.stderr:
+                echo(result.stderr, end='')
         closelog()
     if failed:
         if result.returncode == Exit.ScriptionError:
@@ -529,6 +543,7 @@ def send_mail(recipients, subject, message):
     """
     use system mail command to send MESSAGE to RECIPIENTS
     """
+    return [] ,[]
     if isinstance(recipients, basestring):
         recipients = [recipients]
     sent_addresses = []
@@ -538,7 +553,7 @@ def send_mail(recipients, subject, message):
         # may be skipped if all eligible addresses have already been notified
         try:
             commandline = '/usr/bin/mail -# -r "%s" -s "%s" %s' % (MESSAGE_FROM, subject, address)
-            print(commandline)
+            print(commandline, end='')
             job = Job(commandline, pty=True)
             job.communicate(input=message+'\n\x04', timeout=300)
             if job.stderr:
@@ -546,8 +561,11 @@ def send_mail(recipients, subject, message):
                 syslog(LOG_ERR, '[from %s] failed to send email: %r' % (os.getppid(), job.stderr))
             else:
                 sent_addresses.append(address)
+            print()
+        except ExecuteError:
+            raise
         except Exception as exc:
-            error(exc)
+            print('  --> ', exc)
             failed_to_send.append(address)
             continue
     return sent_addresses, failed_to_send
@@ -557,6 +575,19 @@ class Formatter(logging.Formatter):
     def format(self, record):
         record.pid = os.getpid()
         return logging.Formatter.format(self, record)
+
+
+def save_result_to_file(job, info):
+    if not out_dir.exists():
+        out_dir.mkdir()
+    body = '\n'.join(info)
+    if job.stdout:
+        body += '\n\nstdout\n======\n%s' % job.stdout
+    if job.stderr:
+        body += '\n\nstderr\n======\n%s' % job.stderr
+    filename = job.name + NOW.strftime('-%Y%m%d-%H%M%S')
+    with open(out_dir/filename, 'w') as fh:
+        fh.write(body)
 
 
 if __name__ == '__main__':
