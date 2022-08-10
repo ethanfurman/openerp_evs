@@ -250,7 +250,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
             finally:
                 print('closing job')
                 result.close()
-                if pid_lock:
+                if pid_lock and pid_lock.is_active():
                     print('releasing lock')
                     pid_lock.release()
             stop = time()
@@ -316,7 +316,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                 logger.info('job finished')
                 break
     finally:
-        if pid_lock:
+        if pid_lock and pid_lock.is_active():
             pid_lock.release()
         if result and (passthrough and script_verbosity < 2) or (failed and not email):
             print('relaying job output')
@@ -585,7 +585,7 @@ def save_result_to_file(job, info):
         body += '\n\nstdout\n======\n%s' % job.stdout
     if job.stderr:
         body += '\n\nstderr\n======\n%s' % job.stderr
-    filename = job.name + NOW.strftime('-%Y%m%d-%H%M%S')
+    filename = Path(job.name).filename + NOW.strftime('-%Y%m%d-%H%M%S')
     with open(out_dir/filename, 'w') as fh:
         fh.write(body)
 
