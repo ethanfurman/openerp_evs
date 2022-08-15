@@ -472,7 +472,7 @@ def purge():
     oldest = NOW.replace(delta_day=-out_count)
     removed = 0
     for file in ViewProgress(out_dir.glob()):
-        print('file ', end='', verbose=2)
+        print(file.filename, end='', verbose=2)
         if DateTime.fromtimestamp(file.stat().st_mtime) < oldest:
             print('--> removed', verbose=2)
             file.unlink()
