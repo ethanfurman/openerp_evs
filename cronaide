@@ -5,6 +5,7 @@ from __future__ import print_function
 
 from antipathy import Path
 from antipathy.path import uPath
+from dbf import Date, DateTime
 from itertools import groupby
 from pandaemonium import PidLockFile, LockError, AlreadyLocked, logger as pandaemonium_logger
 from scription import *
@@ -24,8 +25,8 @@ import traceback
 import sys
 
 SCRIPTION_ERROR_EXIT_OKAY = False
-TODAY = datetime.date.today()
-NOW = datetime.datetime.now()
+TODAY = Date.today()
+NOW = DateTime.now()
 
 # load configuration file
 try:
@@ -92,7 +93,7 @@ def seconds2time(seconds):
         log=Spec('logging level to use', OPTION, abbrev=None, force_default='info', type=u.upper),
         log_file=Spec('file to log to', OPTION, abbrev=None, force_default='/var/log/cronaide.log'),
         result_dir=Spec('directory to save job output to', OPTION, abbrev=None, force_default='/var/log/cronaide', type=Path),
-        result_count=Spec('how many files to keep', OPTION, abbrev=None, force_default=45),
+        result_count=Spec('how many days to keep files', OPTION, abbrev=None, force_default=15),
         )
 def main(log, log_file, result_dir, result_count):
     global logger, main_logger, out_dir, out_count
@@ -460,6 +461,23 @@ def check_syslog():
         print('\nF: ', '\n    '.join(wrap(job)), verbose=0)
 
 
+@Command(
+        )
+def purge():
+    "remove old watch files, keep RESULT_COUNT days worth"
+    oldest = NOW.replace(delta_day=-out_count)
+    removed = 0
+    for file in ViewProgress(out_dir.glob()):
+        print('file ', end='', verbose=2)
+        if DateTime.fromtimestamp(file.stat().st_mtime) < oldest:
+            print('--> removed', verbose=2)
+            file.unlink()
+            removed += 1
+        else:
+            print(verbose=2)
+    print('%d files removed' % removed)
+
+
 # supporting routines
 
 def get_lock(lock_action, lock_file, timeout):
@@ -491,8 +509,7 @@ def get_lock(lock_action, lock_file, timeout):
             logger.debug('%s: first attempt failed', lock_file)
             active_pid = lock.last_read_pid
             start = lock.last_read_timestamp
-            now = datetime.datetime.now()
-            if now - start <= datetime.timedelta(seconds=timeout):
+            if NOW - start <= datetime.timedelta(seconds=timeout):
                 logger.debug('%s: previous job within grace period (pid: %s, start: %s, grace period: %s'
                         % (lock_file, active_pid, start.strftime('%Y-%m-%d %H:%M:%S'), seconds2time(timeout))
                         )
