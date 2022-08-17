@@ -14,6 +14,7 @@ from socket import getfqdn
 from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON, LOG_ERR
 from textwrap import wrap
 from time import time
+from urllib import urlopen
 import datetime
 import errno
 import gzip
@@ -34,6 +35,7 @@ try:
 except:
     MESSAGE_FROM = "cronaide <noreply@%s>" % (getfqdn() or 'nowhere.invalid')
     MESSAGE_TO = ['root@localhost']
+    PULSE = None
 
 # and helpers
 
@@ -150,12 +152,13 @@ def test_mail(email):
             OPTION, abbrev='lt', force_default=-1, type=time2seconds,
             ),
         virtualenv=Spec('activate a virtual environment', OPTION, None, type=uPath),
+        pulse=Spec('pulse to send on successful completion of job', OPTION, None),
         job=('job to run', REQUIRED, ),
         )
 @Alias(
         'cronaide'
         )
-def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, passthrough, check_stdout, fail_on_stderr, lock, lock_timeout, lock_action, virtualenv, *job):
+def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, passthrough, check_stdout, fail_on_stderr, lock, lock_timeout, lock_action, virtualenv, pulse, *job):
     """monitor JOB, sending results/status to EMAIL
 
     By default, a locking pid file is used with an immediate timeout, and
@@ -168,6 +171,11 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
     global SCRIPTION_ERROR_EXIT_OKAY
     if not email and (capture or heartbeat):
         abort('if CAPTURE or HEARTBEAT is specified then EMAIL must also be specified')
+    if pulse:
+        if not pulse.startswith('http://'):
+            if PULSE is None:
+                abort('global PULSE not set and command-line PULSE is incomplete')
+            pulse = PULSE + pulse
     job_env = os.environ.copy()
     if virtualenv:
         print('setting virtualenv')
@@ -228,7 +236,7 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                         error(exc.args[0])
                     if passthrough:
                         echo(message)
-                    sys.exit(Exit.TempFail)
+                    sys.exit(Exit.CantCreate)
                 else:
                     logger.debug('lock obtained')
             print('running job:', job)
@@ -329,7 +337,9 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
             if result.stderr:
                 echo(result.stderr, end='')
         closelog()
-    if failed:
+    if not failed:
+        urlopen(pulse).close()
+    else:
         if result.returncode == Exit.ScriptionError:
             SCRIPTION_ERROR_EXIT_OKAY = True
         sys.exit(result.returncode or Exit.Unknown)
