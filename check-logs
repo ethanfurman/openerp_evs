@@ -4,14 +4,14 @@ from __future__ import print_function
 from antipathy import Path
 from scription import *
 from codecs import open
-from re import search
+from re import match, search
 
 @Command(
         term=('expression to search for', ),
         files=Spec('templates of file names to search', type=Path),
         re=('term is a regex', FLAG),
         all=('check all matching files', FLAG),
-        encoding=Spec('encoding of file(s)', OPTION, default='latin1'),
+        encoding=Spec('encoding of file(s)', OPTION, force_default='latin1'),
         )
 def check_logs(term, re, all, encoding, *files):
     if not files:
@@ -29,18 +29,25 @@ def check_logs(term, re, all, encoding, *files):
         for fn in matches:
             print('checking', fn)
             with open(fn, encoding=encoding) as fh:
-                seen = False
+                in_error = seen = False
                 for line in fh:
+                    if in_error and not match('\d{4}-\d{2}-\d{2} ', line):
+                        echo(line, end='')
+                        continue
+                    in_error = False
                     if re:
                         if search(term, line):
+                            in_error = True
                             if not seen:
-                                print(fn, verbose=0)
                                 seen = True
-                            print('  ', line, end='', verbose=0)
+                                echo()
+                                echo(fn, border='box')
+                            echo(line, end='')
                     elif term in line:
+                        in_error = True
                         if not seen:
-                            print(fn, verbose=0)
                             seen = True
-                        print('  ', line, end='', verbose=0)
+                            echo(fn, border='box')
+                        echo(line, end='')
 
 Main()
