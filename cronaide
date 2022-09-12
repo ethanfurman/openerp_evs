@@ -339,7 +339,10 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
                 echo(result.stderr, end='')
         closelog()
     if not failed and pulse:
-        urlopen(pulse).close()
+        try:
+            urlopen(pulse).close()
+        except IOError:
+            pass
     else:
         if result.returncode == Exit.ScriptionError:
             SCRIPTION_ERROR_EXIT_OKAY = True
