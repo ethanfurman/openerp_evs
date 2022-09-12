@@ -6,6 +6,7 @@ from __future__ import print_function
 from antipathy import Path
 from antipathy.path import uPath
 from dbf import Date, DateTime
+from fnx_script_support import send_mail
 from itertools import groupby
 from pandaemonium import PidLockFile, LockError, AlreadyLocked, logger as pandaemonium_logger
 from scription import *
@@ -570,38 +571,6 @@ def is_cronaide(line):
 
 class BreakLoop(Exception):
     pass
-
-def send_mail(recipients, subject, message):
-    """
-    use system mail command to send MESSAGE to RECIPIENTS
-    """
-    return [] ,[]
-    if isinstance(recipients, basestring):
-        recipients = [recipients]
-    sent_addresses = []
-    failed_to_send = []
-    subject = TODAY.strftime('[%Y-%m-%d] %%s') % (subject, )
-    for address in recipients:
-        # may be skipped if all eligible addresses have already been notified
-        try:
-            commandline = '/usr/bin/mail -# -r "%s" -s "%s" %s' % (MESSAGE_FROM, subject, address)
-            print(commandline, end='')
-            job = Job(commandline, pty=True)
-            job.communicate(input=message+'\n\x04', timeout=300)
-            if job.stderr:
-                failed_to_send.append(address)
-                syslog(LOG_ERR, '[from %s] failed to send email: %r' % (os.getppid(), job.stderr))
-            else:
-                sent_addresses.append(address)
-            print()
-        except ExecuteError:
-            raise
-        except Exception as exc:
-            print('  --> ', exc)
-            failed_to_send.append(address)
-            continue
-    return sent_addresses, failed_to_send
-
 
 class Formatter(logging.Formatter):
     def format(self, record):
