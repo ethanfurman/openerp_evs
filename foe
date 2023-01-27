@@ -5,10 +5,7 @@ copy FIS data from the network.
 """
 from __future__ import print_function
 from antipathy import Path
-from datetime import timedelta
-from dbf import Date
 from scription import *
-from VSS.utils import xrange
 import os, sys
 
 @Script()
@@ -25,20 +22,18 @@ def info():
         storage1_dst = config.network.storage1
         storage2_dst = config.network.storage2
         host = config.network.slave
-        echo('\nbackups will be copied from\n  %s\nto\n  %s:%s\n\nand from\n  %s\nto\n  %s:%s' % (
-            storage1_src, host, storage1_dst,
-            storage2_src, host, storage2_dst,
-            ))
+        echo('\nbackups will be copied from\n  %s\nto\n  %s:%s' % (storage1_src, host, storage1_dst))
+        if storage2_src:
+            echo('\nand from\n  %s\nto\n  %s:%s' % (storage2_src, host, storage2_dst,))
     elif config.network.role == 'slave':
         storage1_src = config.network.storage1
         storage2_src = config.network.storage2
         storage1_dst = config.postgres.storage1
         storage2_dst = config.postgres.storage2
         host = config.network.master
-        echo('\nbackups will be copied from\n  %s:%s\nto\n  %s\n\nand from\n  %s:%s\nto\n  %s' % (
-            host, storage1_src, storage1_dst,
-            host, storage2_src, storage2_dst,
-            ))
+        echo('\nbackups will be copied from\n  %s:%s\nto\n  %s' % (host, storage1_src, storage1_dst,))
+        if storage2_src:
+            echo('\n\nand from\n  %s:%s\nto\n  %s' % (host, storage2_src, storage2_dst))
     if OrmSection.get(config.network, 'fis_data_host') is None:
         echo('\n\ncanonical fis data host not configured')
     host = config.network.fis_data_host
@@ -46,7 +41,7 @@ def info():
     pre = config.network.fis_data_prefix
     local_path = config.network.fis_data_local_path
     echo('\nFIS %r data files will be copied from\n  %s:%s\nto\n  %s' % (pre, host, path, local_path))
-    if config.postgres.storage1 == config.postgres.storage2:
+    if config.postgres.storage1 == config.postgres.storage2 or not config.postgres.storage2:
         echo('\nCurrent backups:\n  %s' % '\n  '.join(sorted(Path(config.postgres.storage1).listdir())))
     else:
         echo('\nCurrent storage1 backups:\n  %s' % '\n  '.join(sorted(Path(config.postgres.storage1).listdir())))
@@ -55,8 +50,9 @@ def info():
 @Command(
         remove=('remove excess backups', FLAG),
         latest=('only get last backup', FLAG),
+        info=('show paths', FLAG),
         )
-def backups(remove, latest):
+def backups(remove, latest, info):
     """
     copy backup from master to slave
 
@@ -69,6 +65,7 @@ def backups(remove, latest):
     and the operation (send vs receive) is determined by:
     - network.role
     """
+    verbosity = not info
     if config.network.role == 'master':
         storage1_src = config.postgres.storage1
         storage2_src = config.postgres.storage2
@@ -79,7 +76,9 @@ def backups(remove, latest):
         print('moving backups from\n  %s\nto\n  %s:%s\nand from\n  %s\nto\n  %s:%s' % (
             storage1_src, host, storage1_dst,
             storage2_src, host, storage2_dst,
-            ))
+            ),
+            verbose=verbosity,
+            )
     elif config.network.role == 'slave':
         storage1_src = config.network.storage1
         storage2_src = config.network.storage2
@@ -93,9 +92,13 @@ def backups(remove, latest):
         print('copying backups from\n  %s:%s\nto\n  %s\nand from\n  %s:%s\nto\n  %s' % (
             host, storage1_src, storage1_dst,
             host, storage2_src, storage2_dst,
-            ))
+            ),
+            verbose=verbosity,
+            )
     else:
         help('invalid network role: %r' % config.network.role)
+    if info:
+        return Exit.Success
     output = []
     command, job = rsync(storage1_src, host, storage1_dst, to_remote)
     if job.returncode or job.stderr:

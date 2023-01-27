@@ -123,12 +123,12 @@ def backup(dbs, id, dst, files):
         if not dbs and not RESCUE and not dst:
             print('  backup::2', verbose=2)
             store = True
-            storage = _get_storage()
+            fq_name = _get_backup_filename()
             dbs = _get_dbs_from_postgres()
         else:
             print('  backup::3', verbose=2)
             store = False
-            storage = TEMP
+            fq_name = TEMP
             if RESCUE and not dbs:
                 dbs = _get_dbs_from_postgres()
         template = '%s.sql'
@@ -167,15 +167,15 @@ def backup(dbs, id, dst, files):
     # postgres is backed up, revert to root privilege
     # then, combine them all into a single tar.gz file
     print('  backup::4', verbose=2)
-    tgz_dbs_file = _tgz_dbs(TEMP, storage, id)
+    tgz_dbs_file = _tgz_dbs(TEMP, fq_name, id)
     if files:
         # now get files (must be after dbs or they would be included in the
         # dbs file
-        tgz_bin_file = _tgz_files(storage, id)
+        tgz_bin_file = _tgz_files(fq_name, id)
     # finally, make a copy in monthly if today is the first day of the month
     # but only if store == True
     if store:
-        _remove_excess(storage)
+        _remove_excess(fq_name)
     else:
         print('  backup::7', verbose=2)
         tgz_dbs_file.chown(*ACTUAL_IDS)
@@ -244,7 +244,7 @@ def list(date, file):
         files = []
         files = STORAGE_1.glob('*')
         files.extend(STORAGE_2.glob('*'))
-        files.sort()
+        files.sort(key=lambda p: p.filename)
         for file in files:
             echo(file)
     else:
@@ -473,7 +473,7 @@ def _get_dump_cmds():
     print('gdc::4', verbose=2)
     print('commands are:\n%r\n%r' % (PGDUMPCMD, PGDUMPALLCMD), verbose=3)
 
-def _get_storage():
+def _get_backup_filename():
     """
     get the location for today's backup
     """
@@ -544,7 +544,7 @@ def _psql(cmd):
             raise Exception('\n'.join(lines))
     return result.stdout
 
-def _remove_excess(storage):
+def _remove_excess(fq_file):
     """
     keep one copy of each day's backup
     """
@@ -552,13 +552,13 @@ def _remove_excess(storage):
     # and one each of either MWF or TThSa -- so whichever one we just made, we
     # can delete its older copy
     #
-    # storage includes the date and type portion of the filename
-    dirname = storage.dirname
-    type = storage.split('_')[1]        # type is End, Sun, Mon, Tue, Wed, Thu, Fri, or Sat
+    # fq_file includes the date and type portion of the filename
+    dirname = fq_file.dirname
+    type = fq_file.split('_')[1]        # type is End, Sun, Mon, Tue, Wed, Thu, Fri, or Sat
     found = dirname.glob('*%s*' % type)
     try:
         for f in found:
-            if not f.startswith(storage):
+            if not f.startswith(fq_file):
                 print('removing', f)
                 f.unlink()
     except:
