@@ -35,7 +35,7 @@ try:
 except:
     MESSAGE_FROM = "cronaide <noreply@%s>" % (getfqdn() or 'nowhere.invalid')
     MESSAGE_TO = ['root@localhost']
-    PULSE = None
+    PULSE_SERVER = None
 
 # and helpers
 
@@ -127,7 +127,34 @@ def test_mail(email):
     send_mail(email, 'test mail', 'hope you got this! :)')
 
 
+@Command()
+def self_test():
+    print('checking /etc/cronaide.conf...', verbose=0)
+    if os.path.exists('/etc/cronaide.conf'):
+        print('  exists...', verbose=0)
+        execfile('/etc/cronaide.conf')
+        print('  parsed...', verbose=0)
+        if message.count('%%s'):
+            print('  %%s found (probably bad)', verbose=0)
+        if message.count('%s') != 3:
+            print('  %%s count is %d (should be 3: To, Subject, and Body)' % message.count('%s'), verbose=0)
+        print('  message\n ', '-'*25, '\n ', '\n  '.join(message.split('\n')), '\n ', '-'*25, verbose=0)
+        print('  mail server:', mail_server, verbose=0)
+        print('  notify list:', ', '.join(notify_list), verbose=0)
+    else:
+        if message.count('%%s'):
+            print('  %%s found (probably bad)', verbose=0)
+        if message.count('%s') != 3:
+            print('  %%s count is %d (should be 3: To, Subject, and Body)' % message.count('%s'), verbose=0)
+        print('  does not exist, using defaults:', verbose=0)
+        print('  message\n ', '-'*25, '\n ', '\n  '.join(message.split('\n')), '\n ', '-'*25, verbose=0)
+        print('  mail server:', mail_server, verbose=0)
+        print('  notify list:', ', '.join(notify_list), verbose=0)
 
+
+@Alias(
+        'cronaide', canonical=True
+        )
 @Command(
         email=Spec('Who to send job output to.', MULTI, force_default=MESSAGE_TO),
         email_subject=Spec('subject to use for email (if any)', OPTION, ('subject', 's')),
@@ -153,12 +180,15 @@ def test_mail(email):
             ),
         virtualenv=Spec('activate a virtual environment', OPTION, None, type=uPath),
         pulse=Spec('pulse to send on successful completion of job', OPTION, None),
+        pulse_error=Spec('pulse to send on job failure', OPTION, None),
         job=('job to run', REQUIRED, ),
         )
-@Alias(
-        'cronaide'
-        )
-def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, passthrough, check_stdout, fail_on_stderr, lock, lock_timeout, lock_action, virtualenv, pulse, *job):
+def watch(
+        email, email_subject, job_timeout, retry_job,
+        capture, heartbeat, passthrough, check_stdout, fail_on_stderr,
+        lock, lock_timeout, lock_action,
+        virtualenv, pulse, pulse_error, *job,
+    ):
     """monitor JOB, sending results/status to EMAIL
 
     By default, a locking pid file is used with an immediate timeout, and
@@ -173,9 +203,14 @@ def watch(email, email_subject, job_timeout, retry_job, capture, heartbeat, pass
         abort('if CAPTURE or HEARTBEAT is specified then EMAIL must also be specified')
     if pulse:
         if not pulse.startswith('http://'):
-            if PULSE is None:
-                abort('global PULSE not set and command-line PULSE is incomplete')
-            pulse = PULSE + pulse
+            if PULSE_SERVER is None:
+                abort('global PULSE_SERVER not set and command-line PULSE is incomplete')
+            pulse = PULSE_SERVER + pulse
+    if pulse_error:
+        if not pulse_error.startswith('http://'):
+            if PULSE_SERVER is None:
+                abort('global PULSE_SERVER not set and command-line PULSE_ERROR is incomplete')
+            pulse_error = PULSE_SERVER + pulse_error
     job_env = os.environ.copy()
     if virtualenv:
         print('setting virtualenv')
