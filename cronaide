@@ -93,7 +93,7 @@ def seconds2time(seconds):
 # API
 
 @Script(
-        log=Spec('logging level to use', OPTION, abbrev=None, force_default='info', type=u.upper),
+        log=Spec('logging level to use', OPTION, abbrev=None, force_default='INFO', type=u.upper),
         log_file=Spec('file to log to', OPTION, abbrev=None, force_default='/var/log/cronaide.log'),
         result_dir=Spec('directory to save job output to', OPTION, abbrev=None, force_default='/var/log/cronaide', type=Path),
         result_count=Spec('how many days to keep files', OPTION, abbrev=None, force_default=15),
