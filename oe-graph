@@ -492,9 +492,6 @@ def get_info(module):
             del info['update_xml']
     return info
 
-
-
-CONFIG = None
-SERVER_CONFIG = None
+# do it
 
 Run()
