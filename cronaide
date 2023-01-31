@@ -154,7 +154,7 @@ def self_test():
 
 
 @Alias(
-        'cronaide', canonical=True
+        'cronaide'
         )
 @Command(
         email=Spec('Who to send job output to.', MULTI, force_default=MESSAGE_TO),
@@ -188,7 +188,7 @@ def watch(
         email, email_subject, job_timeout, retry_job,
         capture, heartbeat, passthrough, check_stdout, fail_on_stderr,
         lock, lock_timeout, lock_action,
-        virtualenv, pulse, pulse_error, *job,
+        virtualenv, pulse, pulse_error, *job
     ):
     """monitor JOB, sending results/status to EMAIL
 
