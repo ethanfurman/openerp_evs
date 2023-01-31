@@ -42,6 +42,7 @@ PGDUMPALLCMD += ' --file=%%(filename)s --globals-only'
 STORAGE_1 = Path(pg_settings.storage1)
 STORAGE_2 = Path(pg_settings.storage2)
 TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % pg_settings
+TARUPDATE = '%(tar)s --update --file %%(target_name)s %%(file_list)s' % pg_settings
 TARDISPLAY = '%(tar)s --list --file %%(target)s' % pg_settings
 TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % pg_settings
 UNTAR = '%(tar)s -C %%(root_dir)s -xf %%(archive)s' % pg_settings
@@ -123,20 +124,19 @@ def backup(dbs, id, dst, files):
         if not dbs and not RESCUE and not dst:
             print('  backup::2', verbose=2)
             store = True
-            fq_name = _get_backup_filename()
+            dbs_name, files_name = _get_backup_filename()
             dbs = _get_dbs_from_postgres()
         else:
             print('  backup::3', verbose=2)
             store = False
-            fq_name = TEMP
+            dbs_name = TEMP
             if RESCUE and not dbs:
                 dbs = _get_dbs_from_postgres()
         template = '%s.sql'
         failures = False
         # first, backup as many databases as we can
-        print('backing up: ', end=' ')
+        print('backing up:')
         for db in dbs:
-            print(db, end=' ')
             file = template % db
             if not _backup(db, file) and not db.startswith('template'):
                 failures = True
@@ -167,23 +167,23 @@ def backup(dbs, id, dst, files):
     # postgres is backed up, revert to root privilege
     # then, combine them all into a single tar.gz file
     print('  backup::4', verbose=2)
-    tgz_dbs_file = _tgz_dbs(TEMP, fq_name, id)
+    tgz_dbs_file = _tgz_dbs(TEMP, dbs_name, id)
     if files:
         # now get files (must be after dbs or they would be included in the
         # dbs file
-        tgz_bin_file = _tgz_files(fq_name, id)
+        tar_bin_file = _tar_files(files_name, id)
     # finally, make a copy in monthly if today is the first day of the month
     # but only if store == True
     if store:
-        _remove_excess(fq_name)
+        _remove_excess(dbs_name)
     else:
         print('  backup::7', verbose=2)
         tgz_dbs_file.chown(*ACTUAL_IDS)
         tgz_dbs_file.copy(dst or START_DIR)
         print('  backup::8', verbose=2)
         if files:
-            tgz_bin_file.chown(*ACTUAL_IDS)
-            tgz_bin_file.copy(dst or START_DIR)
+            tar_bin_file.chown(*ACTUAL_IDS)
+            tar_bin_file.copy(dst or START_DIR)
     if failures:
         raise SystemExit('not all databases backed up')
 
@@ -292,11 +292,11 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     tgz_file = sql_file = user_file = None
     if date:
         print('  restore::1', verbose=2)
-        found = STORAGE_1.glob('%s*pg*' % date)
+        found = STORAGE_1.glob('%s*dbs*' % date)
         found_user = STORAGE_1.glob('%s*files*' % date)
         if not found:
             print('  restore::2', verbose=2)
-            found = STORAGE_2.glob('%s*pg*' % date)
+            found = STORAGE_2.glob('%s*dbs*' % date)
             found_user = STORAGE_2.glob('%s*files*' % date)
             if not found:
                 abort('no files found for %s' % date)
@@ -362,14 +362,6 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
         _untar(archive='/tmp/oe_config.tar.gz', root_dir=CONFIG_DIR, skip_old_files=skip)
     if user_files:
         _untar(archive=user_file, root_dir='/')
-
-@Command(
-        parent=('SD[BD]BIG', ),
-        date=('YYYY-mm-dd', ),
-        type=Spec('type of backup', choices=['End','Mon','Tue','Wed','Thu','Fri','Sat','Sun']),
-        )
-def remove_excess(parent, date, type):
-    _remove_excess(Path('/%s/backups/postgres91/%s_%s' % (parent, date, type)))
 
 
 def _backup(db, filename):
@@ -491,15 +483,18 @@ def _get_backup_filename():
     #
     locations = [STORAGE_1, STORAGE_2]
     tomorrow = TODAY.replace(delta_day=1)
+    files_name = locations[TODAY.month%2] / TODAY.strftime('%Y-%m_files')
     if tomorrow.day == 1:
         # month end!
-        return locations[TODAY.month%2] / TODAY.strftime('%Y-%m-%d_End')
+        dbs_name = locations[TODAY.month%2] / TODAY.strftime('%Y-%m-%d_End_dbs')
     elif TODAY.isoweekday() == 0:
         # sunday!
-        return locations[TODAY.toordinal()%2] / TODAY.strftime('%Y-%m-%d_Sun')
+        dbs_name = locations[TODAY.toordinal()%2] / TODAY.strftime('%Y-%m-%d_Sun_dbs')
     else:
         # some other day!
-        return locations[TODAY.isoweekday()%2] / TODAY.strftime('%Y-%m-%d_%a')
+        dbs_name = locations[TODAY.isoweekday()%2] / TODAY.strftime('%Y-%m-%d_%a_dbs')
+    print('filenames:\n   %s\n   %s' % (dbs_name, files_name), verbose=2)
+    return dbs_name, files_name
 
 def _list(archive):
     print('  _list::1', verbose=2)
@@ -697,11 +692,12 @@ def _restore_single_db(sql_file, db, new_db):
 
 def _tgz_dbs(source_path, target_path, id=None):
     if id is None:
-        target = target_path + '_pg91.tar.gz'
+        target = target_path + '.tar.gz'
     else:
-        target = target_path + '_%s_pg91.tar.gz' % (id, )
+        target = target_path + '_%s.tar.gz' % (id, )
     tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(source_path.listdir()))
-    print('\narchiving . . .')
+    print('\narchiving and compressing . . .')
+    print('   %s' % tgz_cmd, verbose=2)
     result = Execute(tgz_cmd, cwd=source_path, pty=False, GZIP="--rsyncable")
     if result.stdout:
         for line in result.stdout.split('\n'):
@@ -711,37 +707,14 @@ def _tgz_dbs(source_path, target_path, id=None):
         for line in result.stderr.split('\n'):
             print('        %s' % line, file=stderr)
         raise SystemExit(result.returncode)
-    print('\ncompressing . . .')
     return target
 
-def _tgz_files(target_path, id=None):
-    # static files/locations are in $CONFIG_DIR/var/openerp/
-    # fnxfs.*
-    # fnxfs/*
+def _tar_files(files_name, id=None):
+    # static files/locations are in $VIRTUAL_ENV/var/openerp/fnxfs
     # location of dynamic store is in openerp at
     #   ir.config_parameter:ir_attachment.location
     #
-    # create config tar file in /tmp
-    target = '/tmp/oe_config.tar.gz'
-    CONFIG_DIR.chdir()
-    tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(Path.glob('*')))
-    print('\narchiving . . .')
-    result = Execute(tgz_cmd, cwd=CONFIG_DIR, pty=False, GZIP="--rsyncable")
-    if result.stdout:
-        for line in result.stdout.split('\n'):
-            print('   %s' % line)
-    if result.returncode:
-        print('FAILED: %s' % tgz_cmd, file=stderr)
-        for line in result.stderr.split('\n'):
-            print('        %s' % line, file=stderr)
-        raise SystemExit(result.returncode)
-    targets = VAR_OPENERP_DIR.glob('fnxfs.*')
-    targets.append(VAR_OPENERP_DIR/'fnxfs')
-    if not VAR_OPENERP_DIR.exists('ws'):
-        error('missing link to %s/ws directory' % VIRTUAL_ENV)
-    else:
-        targets.extend((VAR_OPENERP_DIR / 'ws').glob('*'))
-    targets.append('/tmp/oe_config.tar.gz')
+    targets = ['config', 'var/openerp/fnxfs', 'ws']
     conn = get_connection(hostname=OEHOST, database=OEDATA, login=OEUSER, password=OEPSWD)
     location = get_records(conn, 'ir.config_parameter', domain=[('key','=','ir_attachment.location')])
     if location:
@@ -750,25 +723,25 @@ def _tgz_files(target_path, id=None):
             location = Path(location[7:])
             if location[0] not in '/\\':
                 # add openerp directory to location
-                location = VIRTUAL_ENV / 'openerp' / location
+                location = Path('openerp') / location
             targets.append(location)
     # file names collected, now generate tgz file name, and back them up
     if id is None:
-        target = target_path + '_files.tar.gz'
+        target = files_name + '.tar'
     else:
-        target = target_path + '_%s_files.tar.gz' % (id, )
-    tgz_cmd = TARARCHIVE % dict(target_name=target, file_list=' '.join(targets))
-    print('\narchiving . . .')
-    result = Execute(tgz_cmd, cwd='/', pty=False, GZIP="--rsyncable")
+        target = files_name + '_%s.tar' % (id, )
+    tar_cmd = TARUPDATE % dict(target_name=target, file_list=' '.join(targets))
+    print('\narchiving/updating. . .')
+    print('   %s' % tar_cmd, verbose=2)
+    result = Execute(tar_cmd, cwd=VIRTUAL_ENV, pty=False)
     if result.stdout:
         for line in result.stdout.split('\n'):
             print('   %s' % line)
     if result.returncode:
-        print('FAILED: %s' % tgz_cmd, file=stderr)
+        print('FAILED: %s' % tar_cmd, file=stderr)
         for line in result.stderr.split('\n'):
             print('        %s' % line, file=stderr)
         raise SystemExit(result.returncode)
-    print('\ncompressing . . .')
     return target
 
 def _untar(archive, root_dir, skip_old_files=False, target=None):
