@@ -134,7 +134,7 @@ def test_mail(email):
 @Command(
         email=Spec('Who to send job output to.', MULTI, force_default=MESSAGE_TO),
         email_subject=Spec('subject to use for email (if any)', OPTION, ('subject', 's')),
-        job_timeout=Spec('allowed time for job', OPTION, abbrev='jt', type=time2seconds),
+        job_timeout=Spec('allowed time for job', OPTION, abbrev=('jt','timeout'), type=time2seconds, force_default='60s'),
         retry_job=Spec('number of times to retry job on failure', OPTION, type=int),
         capture=('Send all output to EMAIL', FLAG, ),
         heartbeat=('Send notification of successful job run.', FLAG, ),

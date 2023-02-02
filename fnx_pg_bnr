@@ -292,12 +292,14 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     tgz_file = sql_file = user_file = None
     if date:
         print('  restore::1', verbose=2)
+        print('    looking for %s*dbs*' % date, verbose=2)
         found = STORAGE_1.glob('%s*dbs*' % date)
-        found_user = STORAGE_1.glob('%s*files*' % date)
+        print(date.strftime('    looking for %Y-%m*dbs*'), verbose=2)
+        found_user = STORAGE_1.glob(date.strftime('%Y-%m*files*'))
         if not found:
             print('  restore::2', verbose=2)
             found = STORAGE_2.glob('%s*dbs*' % date)
-            found_user = STORAGE_2.glob('%s*files*' % date)
+            found_user = STORAGE_2.glob(date.strftime('%Y-%m*files*'))
             if not found:
                 abort('no files found for %s' % date)
             if (user_files or config_files) and not found_user:
@@ -357,11 +359,10 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     if config_files:
         # UNTAR = '%(tar)s -C %%(root_dir)s -xf %%(archive)s' % pg_settings
         # restore attachments/etc. and/or config files
-        _untar(archive=user_file, root_dir='/', target='tmp/oe_config.tar.gz')
         skip = config_files == 'missing'
-        _untar(archive='/tmp/oe_config.tar.gz', root_dir=CONFIG_DIR, skip_old_files=skip)
+        _untar(archive=user_file, root_dir=VIRTUAL_ENV, files='config/*', skip_old_files=skip)
     if user_files:
-        _untar(archive=user_file, root_dir='/')
+        _untar(archive=user_file, root_dir=VIRTUAL_ENV, exclude='config/*')
 
 
 def _backup(db, filename):
@@ -744,13 +745,15 @@ def _tar_files(files_name, id=None):
         raise SystemExit(result.returncode)
     return target
 
-def _untar(archive, root_dir, skip_old_files=False, target=None):
+def _untar(archive, root_dir, files=None, exclude=None, skip_old_files=False):
     untar_cmd = UNTAR % dict(root_dir=root_dir, archive=archive)
+    if files:
+        untar_cmd += ' --wildcards %s' % files
+    if exclude:
+        untar_cmd += '  --wildcards --exclude %s' % exclude
     if skip_old_files:
         untar_cmd += ' --skip-old-files'
-    if target:
-        untar_cmd += ' ' + target
-    print('\nextracting . . .')
+    print('\nextracting with %r' % untar_cmd)
     result = Execute(untar_cmd, pty=False)
     if result.stdout:
         for line in result.stdout.split('\n'):
