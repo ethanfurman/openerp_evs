@@ -1,4 +1,4 @@
-#!/usr/local/bin/suid-python --py3
+#!/usr/local/bin/suid-python
 from __future__ import print_function
 
 import grp
