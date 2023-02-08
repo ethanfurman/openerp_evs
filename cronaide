@@ -16,6 +16,7 @@ from syslog import openlog, syslog, closelog, LOG_PID, LOG_INFO, LOG_CRON, LOG_E
 from textwrap import wrap
 from time import time
 from urllib import urlopen
+import codecs
 import datetime
 import errno
 import gzip
@@ -599,7 +600,7 @@ def save_result_to_file(job, info):
     if job.stderr:
         body += '\n\nstderr\n======\n%s' % job.stderr
     filename = Path(job.name).filename + NOW.strftime('-%Y%m%d-%H%M%S')
-    with open(out_dir/filename, 'w') as fh:
+    with codecs.open(out_dir/filename, 'w', encoding='utf8') as fh:
         fh.write(body)
 
 
