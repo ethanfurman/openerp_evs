@@ -198,7 +198,8 @@ def watch(
             old_virtualenv = job_env['VIRTUAL_ENV']
             old_virtualenv_path = old_virtualenv + '/bin'
             path = job_env.get('PATH', '').split(':')
-            path.remove(old_virtualenv_path)
+            if old_virtualenv_path in path:
+                path.remove(old_virtualenv_path)
             job_env['PATH'] = ':'.join(path)
         virtualenv_path = job_env.get('PATH', '').split(':')
         virtualenv_path.insert(0, virtualenv+'/bin')
@@ -604,22 +605,21 @@ def save_result_to_file(job, info):
         fh.write(body)
 
 
-if __name__ == '__main__':
-    try:
-        Run()
-    except:
-        cls, exc, tb = sys.exc_info()
-        if isinstance(exc, SystemExit):
-            exit_code = exc.args[-1]
-            if exit_code == Exit.ScriptionError and not SCRIPTION_ERROR_EXIT_OKAY:
-                send_mail(
-                        MESSAGE_TO,
-                        "cronaide error",
-                        "error with cronaide parameters:\n\n%s\n\n%s"
-                        % (
-                            script_module['script_abort_message'],
-                            traceback.format_exc(),
-                        ))
-        else:
-            send_mail(MESSAGE_TO, "cronaide: exception raised", traceback.format_exc())
-        raise
+try:
+    Run()
+except:
+    cls, exc, tb = sys.exc_info()
+    if isinstance(exc, SystemExit):
+        exit_code = exc.args[-1]
+        if exit_code == Exit.ScriptionError and not SCRIPTION_ERROR_EXIT_OKAY:
+            send_mail(
+                    MESSAGE_TO,
+                    "cronaide error",
+                    "error with cronaide parameters:\n\n%s\n\n%s"
+                    % (
+                        script_module['script_abort_message'],
+                        traceback.format_exc(),
+                    ))
+    else:
+        send_mail(MESSAGE_TO, "cronaide: exception raised", traceback.format_exc())
+    raise
