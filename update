@@ -1,4 +1,4 @@
-#!/usr/local/bin/suid-python
+#!/usr/local/bin/suid-python --virtualenv
 from __future__ import print_function
 
 import grp
@@ -7,13 +7,23 @@ import sys
 import os
 
 try:
-    virtual_env = os.environ['VIRTUAL_ENV']
     from scription import *
     from antipathy import Path
     from xaml import Xaml
+    virtual_env = Path(os.environ['VIRTUAL_ENV'])
 except (KeyError, ImportError):
     print('\n==--> VIRTUAL_ENV must be set\n')
     raise
+
+for p in sys.path:
+    if p.startswith(virtual_env) and p.endswith('/site-packages'):
+        fislib = Path(p) / 'fislib'
+        packages = fislib.parent
+        break
+else:
+    raise Exception('\n==--> unable to locate site-packages:\n%r -- %r -- %r' % (p, virtual_env, sys.path))
+
+local_bin = Path('/usr/local/bin')
 
 self = Path(sys.argv[0])
 mode = self.stat().st_mode
@@ -66,7 +76,7 @@ def install_to_opt_bin(repo):
             print('%s: no such file' % install)
             return
     lines = [l.strip() for l in open(repo/install).readlines() if l.strip()]
-    opt_bin = Path('/opt/bin')
+    opt_bin = Path(virtual_env) / 'bin'
     # pre-screen
     error_lines = []
     for line in lines:
@@ -94,8 +104,16 @@ def install_to_opt_bin(repo):
         elif len(names) == 2:
             src, dst = names
             src = repo/src
+            dst = dst.replace(
+                        '$virtualenv',virtual_env
+                    ).replace(
+                        '$fislib', fislib
+                    ).replace(
+                        '$local', local_bin
+                    ).replace(
+                        '$packages', packages
+                    )
             dst = opt_bin*dst
-            dst = dst.replace('$virtualenv',virtual_env)
             if not dst.dirname.exists():
                 dst.dirname.mkdir()
             echo('  %s --> %s' % (names[0], dst))
