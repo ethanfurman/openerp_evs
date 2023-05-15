@@ -171,10 +171,10 @@ def perms(root, files, dirs):
         )
 def update():
     repo = get_current_repo()
+    xamlize(repo)
     install_to_opt_bin(repo)
     add_group_write_to(repo)
     set_owner_of(repo)
-    xamlize(repo)
 
 @Command(
         root=Spec('directory tree to check for xaml files', REQUIRED, default='.'),
