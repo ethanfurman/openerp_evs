@@ -1,0 +1,14 @@
+*.bak
+*.old
+*.pdf
+.swp
+.*.sw?
+*.pyc
+*.pyo
+*.orig
+*.xml
+*.xsl
+*.rej
+*~
+.*~
+cronaide

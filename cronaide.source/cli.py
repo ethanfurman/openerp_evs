@@ -350,12 +350,18 @@ def watch(
             if result.stderr:
                 echo(result.stderr, end='')
         closelog()
-    if not failed and pulse:
-        try:
-            urlopen(pulse).close()
-        except IOError:
-            pass
+    if not failed:
+        if pulse:
+            try:
+                urlopen(pulse).close()
+            except IOError:
+                pass
     else:
+        if pulse_error:
+            try:
+                urlopen(pulse_error).close()
+            except IOError:
+                pass
         if result.returncode == Exit.ScriptionError:
             SCRIPTION_ERROR_EXIT_OKAY = True
         sys.exit(result.returncode or Exit.Unknown)
