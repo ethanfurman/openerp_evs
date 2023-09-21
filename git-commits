@@ -18,6 +18,8 @@ REPOS = (
         '/opt/whc/openerp',
         '/opt/whc/openerp/addons',
         '/opt/whc/lib/python2.7/site-packages',
+        '/opt/odoo',
+        '/opt/odoo/addons-x',
         '/source',
         '/home/openerp/sandbox/odoo13/addons',
         )
