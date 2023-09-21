@@ -116,7 +116,7 @@ def install_to_opt_bin(repo):
             dst = opt_bin*dst
             if not dst.dirname.exists():
                 dst.dirname.mkdir()
-            echo('  %s --> %s' % (names[0], dst))
+            echo('%s --> %s' % (names[0], dst))
             src.copy(dst)
         else:
             abort('THIS SHOULD NOT HAPPEN -- unable to process %d-item line: <%r>' % (len(names), line))
@@ -201,8 +201,14 @@ def xamlize(root):
                 with open(dirpath/file, 'rb') as src:
                     xaml_doc = Xaml(src.read()).document
                     for page in xaml_doc.pages:
-                        with open(dirpath/(file.strip_ext() + '.' + page.ml.type), 'wb') as dst:
-                            dst.write(page.bytes())
+                        try:
+                            target = dirpath/(file.strip_ext() + '.' + page.ml.type)
+                            with open(target, 'wb') as dst:
+                                dst.write(page.bytes())
+                        except Exception as e:
+                            error('--> error: %s' % e)
+                            if target.exists():
+                                target.unlink()
 
 def get_current_repo():
     cwd = Path.getcwd()
