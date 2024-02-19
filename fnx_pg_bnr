@@ -605,7 +605,7 @@ def _restore_all_dbs(sql_files, dbs):
             print('  _restore_all::5', verbose=2)
             # TODO: find out if changing the owner is necessary
             _psql('-c "ALTER DATABASE %s OWNER TO openerp;"' % db)
-        except Exception, exc:
+        except Exception as exc:
             print('FAILED')
             errors.append(exc)
         else:
@@ -675,7 +675,7 @@ def _restore_single_db(sql_file, db, new_db):
                 )
         print('  _restore_single::5', verbose=2)
         _psql('-c "ALTER DATABASE %s OWNER TO openerp;"' % new_db)
-    except Exception, exc:
+    except Exception as exc:
         error = exc
     with user_ids(0, 0):
         print('  _restore_single::6', verbose=2)
