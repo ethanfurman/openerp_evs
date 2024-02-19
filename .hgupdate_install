@@ -1,2 +1,3 @@
 fnx_pg_bnr --suid
 hgc --suid
+update $local --suid
