@@ -120,7 +120,7 @@ def install_to_opt_bin(repo):
             src.copy(dst)
         else:
             abort('THIS SHOULD NOT HAPPEN -- unable to process %d-item line: <%r>' % (len(names), line))
-        if suid and suid_name == 'root':
+        if suid and suid_name == 'root' or dst.startswith('/usr/'):
             dst.chown(0, 0)
         else:
             dst.chown(oe_uid, oe_gid)
