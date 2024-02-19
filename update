@@ -114,6 +114,8 @@ def install_to_opt_bin(repo):
                         '$packages', packages
                     )
             dst = opt_bin*dst
+            if dst.isdir():
+                dst /= src.filename
             if not dst.dirname.exists():
                 dst.dirname.mkdir()
             echo('%s --> %s' % (names[0], dst))
