@@ -112,6 +112,8 @@ def install_to_opt_bin(repo):
                         '$local', local_bin
                     ).replace(
                         '$packages', packages
+                    ).replace(
+                        '$legacy', '/opt/bin'
                     )
             dst = opt_bin*dst
             if dst.isdir():
