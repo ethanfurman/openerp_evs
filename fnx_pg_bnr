@@ -1,5 +1,5 @@
 #!/usr/local/bin/suid-python --virtualenv
-"""\
+"""
 Create, list, and restore OpenERP databases.
 
 Must be run as root
@@ -15,6 +15,8 @@ import pwd
 import re
 import sys
 import time
+
+# globals
 
 VIRTUAL_ENV = Path(os.environ['VIRTUAL_ENV'])
 CONFIG_DIR = VIRTUAL_ENV / 'config'
@@ -42,7 +44,7 @@ PGDUMPALLCMD += ' --file=%%(filename)s --globals-only'
 STORAGE_1 = Path(pg_settings.storage1)
 STORAGE_2 = Path(pg_settings.storage2)
 TARARCHIVE = '%(tar)s --create --gzip --file %%(target_name)s %%(file_list)s' % pg_settings
-TARUPDATE = '%(tar)s --update --file %%(target_name)s %%(file_list)s' % pg_settings
+TARFILEARCHIVE = '%(tar)s --create --file %%(target_name)s %%(file_list)s' % pg_settings
 TARDISPLAY = '%(tar)s --list --file %%(target)s' % pg_settings
 TGZEXTRACT = '%(tar)s --file %%(archive)s --extract %%(target)s' % pg_settings
 UNTAR = '%(tar)s -C %%(root_dir)s -xf %%(archive)s' % pg_settings
@@ -58,9 +60,9 @@ POSTGRES_IDS = tuple(pwd.getpwnam('postgres')[2:4])
 OPENERP_IDS = tuple(pwd.getpwnam('openerp')[2:4])
 ACTUAL_IDS = os.getuid(), os.getgid()
 TEMP = None
-# PORT = None
+## PORT = None
 
-
+# API
 @Script(
         rescue=('ignore checks', FLAG),
         )
@@ -364,6 +366,7 @@ def restore(db, date, file, new_db, all_dbs, user_files, config_files):
     if user_files:
         _untar(archive=user_file, root_dir=VIRTUAL_ENV, exclude='config/*')
 
+# helpers
 
 def _backup(db, filename):
     pg_dump = PGDUMPCMD % dict(filename=TEMP/filename, db=db)
@@ -484,16 +487,21 @@ def _get_backup_filename():
     #
     locations = [STORAGE_1, STORAGE_2]
     tomorrow = TODAY.replace(delta_day=1)
-    files_name = locations[TODAY.month%2] / TODAY.strftime('%Y-%m_files')
     if tomorrow.day == 1:
         # month end!
-        dbs_name = locations[TODAY.month%2] / TODAY.strftime('%Y-%m-%d_End_dbs')
+        i = TODAY.month%2
+        dbs_name = locations[i] / TODAY.strftime('%Y-%m-%d_End_dbs')
+        files_name = locations[i] / TODAY.strftime('%Y-%m_files')
     elif TODAY.isoweekday() == 0:
         # sunday!
-        dbs_name = locations[TODAY.toordinal()%2] / TODAY.strftime('%Y-%m-%d_Sun_dbs')
+        i = TODAY.toordinal()%2
+        dbs_name = locations[i] / TODAY.strftime('%Y-%m-%d_Sun_dbs')
+        files_name = locations[i] / TODAY.strftime('%Y-%m_files')
     else:
         # some other day!
-        dbs_name = locations[TODAY.isoweekday()%2] / TODAY.strftime('%Y-%m-%d_%a_dbs')
+        i = TODAY.isoweekday()%2
+        dbs_name = locations[i] / TODAY.strftime('%Y-%m-%d_%a_dbs')
+        files_name = locations[i] / TODAY.strftime('%Y-%m_files')
     print('filenames:\n   %s\n   %s' % (dbs_name, files_name), verbose=2)
     return dbs_name, files_name
 
@@ -731,8 +739,8 @@ def _tar_files(files_name, id=None):
         target = files_name + '.tar'
     else:
         target = files_name + '_%s.tar' % (id, )
-    tar_cmd = TARUPDATE % dict(target_name=target, file_list=' '.join(targets))
-    print('\narchiving/updating. . .')
+    tar_cmd = TARFILEARCHIVE % dict(target_name=target, file_list=' '.join(targets))
+    print('\narchiving. . .')
     print('   %s' % tar_cmd, verbose=2)
     result = Execute(tar_cmd, cwd=VIRTUAL_ENV, pty=False)
     if result.stdout:
