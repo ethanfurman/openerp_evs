@@ -5,6 +5,7 @@ Create, list, and restore OpenERP databases.
 Must be run as root
 """
 from __future__ import print_function
+from aenum import Enum
 from dbf import Date
 from antipathy import Path
 from scription import *
@@ -479,7 +480,7 @@ def _get_backup_filename():
     #   Sunday selection is based on odd/even of date.toordinal()
     #   month selection is based on odd/even of month number
     #
-    # isoweekday has Sunday as 0
+    # isoweekday has Sunday as 0 XXX incorrect, and now using an Enum
     #
     # first priority is month-end
     # then sundays
@@ -487,19 +488,19 @@ def _get_backup_filename():
     #
     locations = [STORAGE_1, STORAGE_2]
     tomorrow = TODAY.replace(delta_day=1)
+    weekday = Weekday(TODAY)
     if tomorrow.day == 1:
         # month end!
         i = TODAY.month%2
         dbs_name = locations[i] / TODAY.strftime('%Y-%m-%d_End_dbs')
         files_name = locations[i] / TODAY.strftime('%Y-%m_files')
-    elif TODAY.isoweekday() == 0:
-        # sunday!
-        i = TODAY.toordinal()%2
+    elif weekday is Weekday.SUNDAY:
+        i = TODAY.toordinal() % 2
         dbs_name = locations[i] / TODAY.strftime('%Y-%m-%d_Sun_dbs')
         files_name = locations[i] / TODAY.strftime('%Y-%m_files')
     else:
         # some other day!
-        i = TODAY.isoweekday()%2
+        i = weekday.value % 2
         dbs_name = locations[i] / TODAY.strftime('%Y-%m-%d_%a_dbs')
         files_name = locations[i] / TODAY.strftime('%Y-%m_files')
     print('filenames:\n   %s\n   %s' % (dbs_name, files_name), verbose=2)
@@ -780,5 +781,22 @@ def _user_exists(user):
         if line.strip() == user:
             result = True
     return result
+
+
+class Weekday(Enum):
+    """
+    Days of the week, ISO numbered
+    """
+    MONDAY = 1
+    TUESDAY = 2
+    WEDNESDAY = 3
+    THURSDAY = 4
+    FRIDAY = 5
+    SATURDAY = 6
+    SUNDAY = 7
+
+    @classmethod
+    def from_date(cls, date):
+        return cls(date.isoweekday())
 
 Main()
